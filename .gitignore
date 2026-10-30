@@ -1,0 +1,13 @@
+__MACOSX/
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+*.log
+echo "proofmotion/.git/" >> .gitignore
+proofmotion/.git/

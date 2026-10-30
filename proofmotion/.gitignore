@@ -1,0 +1,29 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS files
+.DS_Store
+
+# Test and coverage caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE settings
+.vscode/
+
+# Secrets and environment variables
+.env
+.env.*
+
+# Build files
+build/
+dist/
+*.egg-info/
