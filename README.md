@@ -16,8 +16,6 @@ The table below summarizes the actual state of the codebase and whether each fea
 | Rasterization | Complete | Yes | Integer algorithms, QPainter | DDA, Bresenham (all 8 octants), Midpoint Circle on a pixel grid |
 | Clipping | Complete | Yes | Region outcodes, QPainter | Cohen-Sutherland line and Sutherland-Hodgman polygon clipping |
 | UI Controls | Complete | Yes | PyQt5 | Timers, steppers, presets, zoom, pan, grid, fullscreen |
-| Image Processing | Complete | No | NumPy, OpenCV | Implemented in backend; navigation tab hidden |
-| 3D Projections / OpenGL | Complete | No | NumPy 4x4 matrices, PyOpenGL | Implemented in backend; navigation tab hidden |
 
 The active navigation bar currently displays five core sections: Theorems, Algorithms, Transformations, Rasterization, and Clipping. The Image Processing and 3D OpenGL modules are implemented in the computational backend and verified by automated tests, but their buttons have been removed from the navigation bar.
 
