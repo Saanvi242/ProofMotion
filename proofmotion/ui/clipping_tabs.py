@@ -8,9 +8,9 @@ hang into the canvas.
 """
 
 from typing import Dict, List, Tuple
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QFrame, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy, QStyle, QStyleOption
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QCursor
+from PyQt5.QtGui import QCursor, QPainter
 
 from resources.theme import get_ui_font
 
@@ -25,39 +25,47 @@ HODGMAN_TABS: List[Tuple[str, str, str]] = [
 ]
 
 
-class LessonTabChip(QWidget):
-    """Self-contained two-line lesson tab with a reserved height."""
+class LessonTabChip(QFrame):
+    """Self-contained two-line lesson tab chip with guaranteed background painting."""
     clicked = pyqtSignal(str)
 
     def __init__(self, key: str, title: str, hint: str, parent=None):
         super().__init__(parent)
         self.key = key
         self.setObjectName("ClippingTabChip")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.setFixedHeight(54)
+        self.setFixedHeight(52)
         self._active = False
 
         col = QVBoxLayout(self)
-        col.setContentsMargins(16, 8, 16, 8)
-        col.setSpacing(1)
+        col.setContentsMargins(13, 5, 13, 5)
+        col.setSpacing(2)
 
         self._title = QLabel(title)
         self._title.setObjectName("ClippingTabTitle")
-        self._title.setFont(get_ui_font(13, weight=600))
+        self._title.setFont(get_ui_font(12, weight=600))
         self._title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         col.addWidget(self._title)
 
         self._hint = QLabel(hint)
         self._hint.setObjectName("ClippingTabHint")
-        self._hint.setFont(get_ui_font(11, weight=400))
+        self._hint.setFont(get_ui_font(10, weight=400))
         self._hint.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         col.addWidget(self._hint)
 
         self.set_active(False)
 
     def sizeHint(self) -> QSize:
-        return QSize(max(168, super().sizeHint().width()), 54)
+        return QSize(max(130, super().sizeHint().width()), 52)
+
+    def paintEvent(self, event):
+        opt = QStyleOption()
+        opt.initFrom(self)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PE_Widget, opt, p, self)
+        super().paintEvent(event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -68,27 +76,43 @@ class LessonTabChip(QWidget):
         self._active = active
         if active:
             self.setStyleSheet("""
-                QWidget#ClippingTabChip {
+                QFrame#ClippingTabChip {
                     background-color: #6C5CE7;
-                    border: 1px solid #5B4BD4;
-                    border-radius: 12px;
+                    border: 1.5px solid #5B4BD4;
+                    border-radius: 10px;
                 }
-                QLabel#ClippingTabTitle { color: #FFFFFF; background: transparent; }
-                QLabel#ClippingTabHint { color: #EDE9FE; background: transparent; }
+                QLabel#ClippingTabTitle {
+                    color: #FFFFFF;
+                    font-weight: 600;
+                    background: transparent;
+                }
+                QLabel#ClippingTabHint {
+                    color: #EDE9FE;
+                    font-weight: 400;
+                    background: transparent;
+                }
             """)
         else:
             self.setStyleSheet("""
-                QWidget#ClippingTabChip {
+                QFrame#ClippingTabChip {
                     background-color: #FFFFFF;
-                    border: 1px solid #E2E8F0;
-                    border-radius: 12px;
+                    border: 1.5px solid #E2E8F0;
+                    border-radius: 10px;
                 }
-                QWidget#ClippingTabChip:hover {
-                    background-color: #F5F3FF;
-                    border-color: #DDD6FE;
+                QFrame#ClippingTabChip:hover {
+                    background-color: #F8FAFC;
+                    border-color: #CBD5E1;
                 }
-                QLabel#ClippingTabTitle { color: #334155; background: transparent; }
-                QLabel#ClippingTabHint { color: #94A3B8; background: transparent; }
+                QLabel#ClippingTabTitle {
+                    color: #1E293B;
+                    font-weight: 600;
+                    background: transparent;
+                }
+                QLabel#ClippingTabHint {
+                    color: #64748B;
+                    font-weight: 400;
+                    background: transparent;
+                }
             """)
 
 
@@ -99,16 +123,23 @@ class ClippingTabBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ClippingTabBar")
-        self.setFixedHeight(62)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedHeight(58)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._active_tab = "region_codes"
         self._buttons: Dict[str, LessonTabChip] = {}
         self._tab_defs: List[Tuple[str, str, str]] = list(COHEN_TABS)
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 4, 0, 4)
-        self._layout.setSpacing(10)
+        self._layout.setContentsMargins(0, 2, 0, 4)
+        self._layout.setSpacing(8)
         self._rebuild()
+
+    def setVisible(self, visible: bool):
+        super().setVisible(visible)
+        if visible:
+            for chip in self._buttons.values():
+                chip.show()
 
     def current_tab(self) -> str:
         return self._active_tab
@@ -142,10 +173,11 @@ class ClippingTabBar(QWidget):
         self._clear_layout()
         self._buttons = {}
         for key, label, hint in self._tab_defs:
-            chip = LessonTabChip(key, label, hint)
+            chip = LessonTabChip(key, label, hint, parent=self)
             chip.clicked.connect(lambda _k, k=key: self.set_current_tab(k, emit_signal=True))
             self._layout.addWidget(chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
             self._buttons[key] = chip
+            chip.show()
         self._layout.addStretch(1)
         self._update_styles()
 

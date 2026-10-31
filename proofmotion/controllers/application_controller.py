@@ -12,11 +12,9 @@ Coordinates:
   - Synchronized equations, pseudocode, metrics, and explanations
 """
 
-import os
 import random
 from typing import Dict, List, Any, Optional
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from models.theorem_state import Theorem, ParameterSpec, ParameterType, ProofStep
 from core.step_model import VisualizationStep
@@ -25,8 +23,8 @@ from algorithms.algorithm_engine import AlgorithmEngine
 import cgip.transformations as cgip_trans
 import cgip.rasterization as cgip_rast
 import cgip.clipping as cgip_clip
-import cgip.image_processing as cgip_img
 import cgip.projection_3d as cgip_3d
+import cgip.curves as cgip_curves
 
 
 class ApplicationController(QObject):
@@ -41,14 +39,13 @@ class ApplicationController(QObject):
         self.window = main_window
         self.theorem_engine = engine or TheoremEngine()
 
-        self.current_module = "theorems"
+        self.current_module = "algorithms"
         self.current_topic_key = ""
         self.current_parameters: Dict[str, Any] = {}
         self.current_steps: List[Any] = []
         self.current_step_index = 0
         self.is_playing = False
         self.speed_multiplier = 1.0
-        self._custom_image: Optional[Any] = None
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_step_from_timer)
@@ -56,9 +53,12 @@ class ApplicationController(QObject):
         self._init_module_catalog()
         self._wire_signals()
 
-        # Start on Theorems
-        self.window.select_module("theorems")
-        self.on_module_selected("theorems")
+        # First paint is the Learn / Studio gateway, not a packed lesson
+        if hasattr(self.window, "show_home"):
+            self.window.show_home()
+        else:
+            self.window.select_module("algorithms")
+            self.on_module_selected("algorithms")
 
     # ------------------------------------------------------------------
     # Module & Topic Catalog
@@ -231,6 +231,18 @@ class ApplicationController(QObject):
                             ParameterSpec("grid_size", "Grid Size", ParameterType.INTEGER, default=22, min_value=10, max_value=40),
                         ]
                     ),
+                    Theorem(
+                        key="rast_compare",
+                        display_name="DDA vs Bresenham",
+                        short_description="Same endpoints, two rasterizers — compare pixels and the decision pendulum.",
+                        parameters=[
+                            ParameterSpec("x0", "Start X₀", ParameterType.INTEGER, default=2, min_value=0, max_value=30),
+                            ParameterSpec("y0", "Start Y₀", ParameterType.INTEGER, default=3, min_value=0, max_value=30),
+                            ParameterSpec("x1", "End X₁", ParameterType.INTEGER, default=17, min_value=0, max_value=30),
+                            ParameterSpec("y1", "End Y₁", ParameterType.INTEGER, default=11, min_value=0, max_value=30),
+                            ParameterSpec("grid_size", "Grid Size", ParameterType.INTEGER, default=20, min_value=10, max_value=40),
+                        ]
+                    ),
                 ]
             },
             "clipping": {
@@ -266,70 +278,61 @@ class ApplicationController(QObject):
                     ),
                 ]
             },
-            "image_processing": {
-                "title": "IMAGE PROCESSING",
+            "curves": {
+                "title": "CURVES",
                 "items": [
                     Theorem(
-                        key="img_grayscale",
-                        display_name="Grayscale Conversion (Manual)",
-                        short_description="Manual ITU-R BT.601 luma weighting: Y = 0.299R + 0.587G + 0.114B.",
+                        key="curve_bezier",
+                        display_name="Bézier Curves — De Casteljau",
+                        short_description="Repeated linear interpolation builds a point on the curve.",
                         parameters=[
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
+                            ParameterSpec("p0x", "P0 X", ParameterType.LENGTH, default=-5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p0y", "P0 Y", ParameterType.LENGTH, default=-2.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1x", "P1 X", ParameterType.LENGTH, default=-1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1y", "P1 Y", ParameterType.LENGTH, default=4.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2x", "P2 X", ParameterType.LENGTH, default=1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2y", "P2 Y", ParameterType.LENGTH, default=-4.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3x", "P3 X", ParameterType.LENGTH, default=5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3y", "P3 Y", ParameterType.LENGTH, default=2.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t", "Parameter t", ParameterType.RATIO, default=0.35, min_value=0.0, max_value=1.0),
                         ]
                     ),
                     Theorem(
-                        key="img_threshold",
-                        display_name="Binary Thresholding (Manual)",
-                        short_description="Manual binary segmentation: dst(x,y) = 255 if src(x,y) >= T else 0.",
+                        key="curve_bspline",
+                        display_name="B-Spline Curves",
+                        short_description="Local control through degree, knots, and Cox–de Boor bases.",
                         parameters=[
-                            ParameterSpec("threshold", "Threshold Cutoff", ParameterType.INTEGER, default=128, min_value=0, max_value=255),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
+                            ParameterSpec("p0x", "P0 X", ParameterType.LENGTH, default=-5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p0y", "P0 Y", ParameterType.LENGTH, default=-1.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1x", "P1 X", ParameterType.LENGTH, default=-2.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1y", "P1 Y", ParameterType.LENGTH, default=3.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2x", "P2 X", ParameterType.LENGTH, default=0.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2y", "P2 Y", ParameterType.LENGTH, default=-2.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3x", "P3 X", ParameterType.LENGTH, default=2.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3y", "P3 Y", ParameterType.LENGTH, default=3.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p4x", "P4 X", ParameterType.LENGTH, default=5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p4y", "P4 Y", ParameterType.LENGTH, default=-1.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("degree", "Degree", ParameterType.CHOICE, default="3 (cubic)",
+                                          choices=["2 (quadratic)", "3 (cubic)"]),
+                            ParameterSpec("knot_style", "Knot vector", ParameterType.CHOICE, default="Clamped uniform",
+                                          choices=["Clamped uniform", "Uniform"]),
+                            ParameterSpec("u", "Parameter u", ParameterType.RATIO, default=0.45, min_value=0.0, max_value=1.0),
                         ]
                     ),
                     Theorem(
-                        key="img_gaussian",
-                        display_name="Gaussian Blurring (Manual 2D)",
-                        short_description="Manual continuous Gaussian kernel generation and 2D spatial convolution.",
+                        key="curve_hermite",
+                        display_name="Hermite Curves",
+                        short_description="A cubic that matches two endpoints and two tangent vectors.",
                         parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("sigma", "Sigma (σ)", ParameterType.LENGTH, default=1.5, min_value=0.5, max_value=10.0),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_mean",
-                        display_name="Mean Box Filter (Manual)",
-                        short_description="Uniform spatial low-pass filter computing local neighborhood average.",
-                        parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_median",
-                        display_name="Median Filter (Manual)",
-                        short_description="Manual non-linear spatial filter removing salt-and-pepper impulse noise.",
-                        parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="salt_and_pepper", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_sobel",
-                        display_name="Sobel Edge Detection (Manual)",
-                        short_description="Manual Gx, Gy convolution kernels and gradient magnitude sqrt(Gx² + Gy²).",
-                        parameters=[
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_canny",
-                        display_name="Canny Edge Detection (OpenCV Reference)",
-                        short_description="Multi-stage hysteresis edge detection (OpenCV reference comparison).",
-                        parameters=[
-                            ParameterSpec("low_threshold", "Low Threshold", ParameterType.INTEGER, default=50, min_value=0, max_value=255),
-                            ParameterSpec("high_threshold", "High Threshold", ParameterType.INTEGER, default=150, min_value=0, max_value=255),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
+                            ParameterSpec("p0x", "P0 X", ParameterType.LENGTH, default=-4.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p0y", "P0 Y", ParameterType.LENGTH, default=-1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1x", "P1 X", ParameterType.LENGTH, default=4.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1y", "P1 Y", ParameterType.LENGTH, default=1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t0x", "T0 X", ParameterType.LENGTH, default=3.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t0y", "T0 Y", ParameterType.LENGTH, default=5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t1x", "T1 X", ParameterType.LENGTH, default=3.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t1y", "T1 Y", ParameterType.LENGTH, default=-5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("t", "Parameter t", ParameterType.RATIO, default=0.35, min_value=0.0, max_value=1.0),
                         ]
                     ),
                 ]
@@ -399,6 +402,8 @@ class ApplicationController(QObject):
     def _wire_signals(self):
         w = self.window
         w.moduleSelected.connect(self.on_module_selected)
+        if hasattr(w, "homeRequested"):
+            w.homeRequested.connect(self.on_home_requested)
         w.theorem_panel.theoremSelected.connect(self.on_topic_selected)
         w.parameter_panel.parametersApplied.connect(self.on_parameters_applied)
 
@@ -414,21 +419,39 @@ class ApplicationController(QObject):
         w.view_controls.resetViewClicked.connect(self.on_reset_view)
         w.view_controls.panRequested.connect(self.on_pan_requested)
         w.view_controls.gridToggled.connect(self.on_grid_toggled)
-        w.view_controls.openImageClicked.connect(self.on_open_image)
-        w.view_controls.saveImageClicked.connect(self.on_save_image)
-        w.view_controls.resetImageClicked.connect(self.on_reset_image)
 
         w.visualization_widget.clippingEndpointDragged.connect(self.on_clipping_endpoint_dragged)
         w.visualization_widget.clippingRegionClicked.connect(self.on_clipping_region_clicked)
+        w.visualization_widget.curveHandleDragged.connect(self.on_curve_handle_dragged)
         if hasattr(w, "clipping_tab_bar"):
             w.clipping_tab_bar.tabChanged.connect(self.on_clipping_tab_changed)
+        if hasattr(w.parameter_panel, "curveTChanged"):
+            w.parameter_panel.curveTChanged.connect(self.on_curve_t_changed)
 
     # ------------------------------------------------------------------
     # Module & Topic Selection
     # ------------------------------------------------------------------
+    def on_home_requested(self):
+        self._stop_playback()
+        if self.current_module == "playground":
+            self.current_module = self.window._last_lesson_module or "algorithms"
+
     def on_module_selected(self, module_key: str):
         self._stop_playback()
         self.current_module = module_key
+
+        if module_key != "playground" and hasattr(self.window, "select_module"):
+            self.window.select_module(module_key)
+
+        if module_key == "playground":
+            if hasattr(self.window, "show_playground"):
+                self.window.show_playground()
+            self.window.set_status("Studio — not a lesson. Draw, transform, and watch the matrix follow.")
+            return
+
+        if hasattr(self.window, "show_lessons"):
+            self.window.show_lessons()
+
         mod_info = self._catalog.get(module_key)
         if not mod_info:
             return
@@ -438,10 +461,6 @@ class ApplicationController(QObject):
             self.window.set_active_renderer("opengl")
         else:
             self.window.set_active_renderer("2d")
-
-        # Toggle Image Studio action toolbar
-        if hasattr(self.window, "view_controls"):
-            self.window.view_controls.set_image_mode(module_key == "image_processing")
 
         # Toggle Zoom controls: hidden in algorithms section, visible in all others
         is_algorithms = (module_key == "algorithms")
@@ -500,17 +519,23 @@ class ApplicationController(QObject):
         if hasattr(self.window, "set_sorting_controls_visible"):
             self.window.set_sorting_controls_visible(is_sorting)
 
-        # Toggle clipping lesson tabs for Cohen–Sutherland and Sutherland–Hodgman
+        # Toggle lesson tabs for clipping and curves
         is_cohen = (topic_key == "clip_cohen_sutherland")
         is_hodgman = (topic_key == "clip_sutherland_hodgman")
+        is_curve = topic_key in ("curve_bezier", "curve_bspline", "curve_hermite")
         if hasattr(self.window, "set_clipping_tabs_visible"):
-            self.window.set_clipping_tabs_visible(is_cohen or is_hodgman)
+            self.window.set_clipping_tabs_visible(is_cohen or is_hodgman or is_curve)
             if hasattr(self.window, "clipping_tab_bar"):
                 from ui.clipping_tabs import COHEN_TABS, HODGMAN_TABS
                 if is_cohen:
                     self.window.clipping_tab_bar.set_tabs(COHEN_TABS, "region_codes")
                 elif is_hodgman:
                     self.window.clipping_tab_bar.set_tabs(HODGMAN_TABS, "four_cases")
+                elif is_curve:
+                    self.window.clipping_tab_bar.set_tabs(
+                        cgip_curves.tabs_for_topic(topic_key),
+                        cgip_curves.default_tab(topic_key),
+                    )
             if hasattr(self.window.parameter_panel, "set_clipping_lesson_tab"):
                 if is_cohen:
                     self.window.parameter_panel.set_clipping_lesson_tab("region_codes")
@@ -518,6 +543,13 @@ class ApplicationController(QObject):
                     self.window.parameter_panel.set_clipping_lesson_tab("four_cases")
                 else:
                     self.window.parameter_panel.set_clipping_lesson_tab("")
+            if hasattr(self.window.parameter_panel, "set_curve_lesson_tab"):
+                if is_curve:
+                    self.window.parameter_panel.set_curve_lesson_tab(
+                        topic_key, cgip_curves.default_tab(topic_key)
+                    )
+                else:
+                    self.window.parameter_panel.set_curve_lesson_tab("", "")
 
         # Apply default parameters
         defaults = {p.key: p.default for p in item.parameters}
@@ -675,16 +707,12 @@ class ApplicationController(QObject):
                 y2 = float(values.get("y2", -2.0))
                 return cgip_clip.cohen_sutherland_trace(x1, y1, x2, y2, xmin, ymin, xmax, ymax)
 
-        # 6. Image Processing
-        elif self.current_module == "image_processing":
-            if self._custom_image is not None:
-                img_np = self._custom_image.copy()
-            else:
-                pattern = str(values.get("pattern", "shapes"))
-                img_np = cgip_img.generate_synthetic_image(pattern, size=300)
-            op = key.replace("img_", "")
-            step = cgip_img.build_image_step(img_np, op, values)
-            return [step]
+        # 6. Curves & Geometric Modelling
+        elif self.current_module == "curves":
+            tab = ""
+            if hasattr(self.window, "clipping_tab_bar"):
+                tab = self.window.clipping_tab_bar.current_tab()
+            return cgip_curves.generate_curve_steps(key, values, tab)
 
         # 7. 3D Projections
         elif self.current_module == "projections_3d":
@@ -742,7 +770,7 @@ class ApplicationController(QObject):
         )
         self.stepChanged.emit(idx, total)
 
-        # Update live lesson card for clipping topics
+        # Update live lesson card for clipping and curve topics
         if self.current_topic_key in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
             tab = ""
             if hasattr(self.window, "clipping_tab_bar"):
@@ -750,6 +778,14 @@ class ApplicationController(QObject):
             if hasattr(self.window.parameter_panel, "set_clipping_lesson_tab"):
                 self.window.parameter_panel.set_clipping_lesson_tab(tab)
             self.window.parameter_panel.update_clipping_walkthrough(vals)
+        elif self.current_topic_key in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            tab = ""
+            if hasattr(self.window, "clipping_tab_bar"):
+                tab = self.window.clipping_tab_bar.current_tab()
+            if hasattr(self.window.parameter_panel, "set_curve_lesson_tab"):
+                self.window.parameter_panel.set_curve_lesson_tab(self.current_topic_key, tab)
+            if hasattr(self.window.parameter_panel, "update_curve_walkthrough"):
+                self.window.parameter_panel.update_curve_walkthrough(vals)
 
         # If on the last step of a theorem or clipping, show verified result
         if idx == total - 1 and self.current_module == "theorems":
@@ -771,6 +807,13 @@ class ApplicationController(QObject):
                 )
             elif vals.get("status") == "rejected":
                 self.window.equation_panel.display_result("Rejected: polygon lies entirely outside the clipping window")
+        elif self.current_topic_key in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            pt = vals.get("curve_point")
+            param = vals.get("t", vals.get("u"))
+            if pt and (idx >= 1 or idx == total - 1):
+                self.window.equation_panel.display_result(
+                    f"C({float(param):.2f}) = ({pt[0]:.2f}, {pt[1]:.2f})"
+                )
 
     def on_clipping_endpoint_dragged(self, target: str, x: float, y: float):
         """Handle real-time endpoint dragging on the canvas."""
@@ -795,9 +838,28 @@ class ApplicationController(QObject):
         self._render_current_step()
 
     def on_clipping_tab_changed(self, tab_key: str):
-        """Switch lesson tabs for Cohen–Sutherland or Sutherland–Hodgman."""
+        """Switch lesson tabs for clipping or curve topics."""
+        if self.current_topic_key in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            if hasattr(self.window, "clipping_tab_bar"):
+                self.window.clipping_tab_bar.set_current_tab(tab_key, emit_signal=False)
+            self._stop_playback()
+            try:
+                self.current_steps = cgip_curves.generate_curve_steps(
+                    self.current_topic_key, self.current_parameters, tab_key
+                )
+                self.window.parameter_panel.clear_validation_error()
+            except Exception as e:
+                self.window.parameter_panel.show_validation_error(str(e))
+                return
+            if hasattr(self.window.parameter_panel, "set_curve_lesson_tab"):
+                self.window.parameter_panel.set_curve_lesson_tab(self.current_topic_key, tab_key)
+            self.current_step_index = 0
+            self._render_current_step()
+            return
         if self.current_topic_key not in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
             return
+        if hasattr(self.window, "clipping_tab_bar"):
+            self.window.clipping_tab_bar.set_current_tab(tab_key, emit_signal=False)
         self._stop_playback()
         p = self.current_parameters
         xmin = float(p.get("xmin", -3.0))
@@ -845,6 +907,61 @@ class ApplicationController(QObject):
             if s.values.get("lesson") == "region" and s.values.get("active_code") == code:
                 self.current_step_index = idx
                 break
+        self._render_current_step()
+
+    def on_curve_handle_dragged(self, handle: str, x: float, y: float):
+        """Live-update a control point or Hermite tangent from canvas dragging."""
+        if self.current_topic_key not in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            return
+        p = self.current_parameters
+        if handle in ("T0", "T1"):
+            origin_key = "p0" if handle == "T0" else "p1"
+            p[f"{handle.lower()}x"] = x - float(p.get(f"{origin_key}x", 0.0))
+            p[f"{handle.lower()}y"] = y - float(p.get(f"{origin_key}y", 0.0))
+            self.window.parameter_panel.set_input_value(f"{handle.lower()}x", p[f"{handle.lower()}x"])
+            self.window.parameter_panel.set_input_value(f"{handle.lower()}y", p[f"{handle.lower()}y"])
+        elif handle.startswith("P") and handle[1:].isdigit():
+            idx = handle[1:]
+            p[f"p{idx}x"] = x
+            p[f"p{idx}y"] = y
+            self.window.parameter_panel.set_input_value(f"p{idx}x", x)
+            self.window.parameter_panel.set_input_value(f"p{idx}y", y)
+        else:
+            return
+
+        self._stop_playback()
+        tab = ""
+        if hasattr(self.window, "clipping_tab_bar"):
+            tab = self.window.clipping_tab_bar.current_tab()
+        self.current_steps = cgip_curves.generate_curve_steps(self.current_topic_key, p, tab)
+        self.current_step_index = min(self.current_step_index, max(0, len(self.current_steps) - 1))
+        self._render_current_step()
+
+    def on_curve_t_changed(self, value: float):
+        """Seek the parameter slider without resetting the lesson."""
+        if self.current_topic_key not in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            return
+        key = "u" if self.current_topic_key == "curve_bspline" else "t"
+        self.current_parameters[key] = float(value)
+        self.window.parameter_panel.set_input_value(key, float(value))
+        tab = ""
+        if hasattr(self.window, "clipping_tab_bar"):
+            tab = self.window.clipping_tab_bar.current_tab()
+
+        if tab == "experiment" and self.current_steps:
+            best = min(
+                range(len(self.current_steps)),
+                key=lambda i: abs(float(self.current_steps[i].values.get(key, self.current_steps[i].values.get("t", 0.0))) - value),
+            )
+            self.current_step_index = best
+            self._render_current_step()
+            return
+
+        self._stop_playback()
+        self.current_steps = cgip_curves.generate_curve_steps(
+            self.current_topic_key, self.current_parameters, tab
+        )
+        self.current_step_index = min(self.current_step_index, max(0, len(self.current_steps) - 1))
         self._render_current_step()
 
     def on_step_selected(self, step_index: int):
@@ -959,59 +1076,3 @@ class ApplicationController(QObject):
     def on_grid_toggled(self, checked: bool):
         if hasattr(self.window, "opengl_widget"):
             self.window.opengl_widget.set_show_grid(checked)
-
-    # ------------------------------------------------------------------
-    # Image Studio Controls
-    # ------------------------------------------------------------------
-    def on_open_image(self):
-        filepath, _ = QFileDialog.getOpenFileName(
-            self.window,
-            "Select Input Image",
-            "",
-            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)"
-        )
-        if not filepath:
-            return
-
-        try:
-            img = cgip_img.load_image(filepath)
-            self._custom_image = img
-            self.on_parameters_applied(self.current_parameters)
-            if hasattr(self.window, "set_status"):
-                self.window.set_status(f"Loaded image: {os.path.basename(filepath)} ({img.shape[1]}×{img.shape[0]} px)")
-        except Exception as e:
-            QMessageBox.critical(self.window, "Image Load Error", f"Failed to load image:\n{str(e)}")
-
-    def on_save_image(self):
-        if not self.current_steps or self.current_step_index >= len(self.current_steps):
-            QMessageBox.warning(self.window, "Save Result", "No processed image available to save.")
-            return
-
-        curr_step = self.current_steps[self.current_step_index]
-        vals = getattr(curr_step, "values", {})
-        proc_arr = vals.get("processed_array")
-        if proc_arr is None:
-            QMessageBox.warning(self.window, "Save Result", "No processed image array found in current step.")
-            return
-
-        filepath, _ = QFileDialog.getSaveFileName(
-            self.window,
-            "Save Processed Image",
-            "processed_output.png",
-            "PNG Image (*.png);;JPEG Image (*.jpg);;BMP Image (*.bmp);;All Files (*)"
-        )
-        if not filepath:
-            return
-
-        try:
-            cgip_img.save_image(filepath, proc_arr)
-            if hasattr(self.window, "set_status"):
-                self.window.set_status(f"Saved processed image to: {os.path.basename(filepath)}")
-        except Exception as e:
-            QMessageBox.critical(self.window, "Image Save Error", f"Failed to save image:\n{str(e)}")
-
-    def on_reset_image(self):
-        self._custom_image = None
-        self.on_parameters_applied(self.current_parameters)
-        if hasattr(self.window, "set_status"):
-            self.window.set_status("Restored default synthetic test pattern.")

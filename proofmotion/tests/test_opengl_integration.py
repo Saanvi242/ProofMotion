@@ -11,6 +11,8 @@ import sys
 import unittest
 import numpy as np
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QEvent, QPoint
+from PyQt5.QtGui import QMouseEvent
 
 from ui.main_window import MainWindow
 from graphics.opengl_widget import OpenGL3DWidget
@@ -97,6 +99,20 @@ class TestOpenGLWidget(unittest.TestCase):
         self.assertEqual(self.widget.object_type, "pyramid")
         self.assertEqual(self.widget.projection_mode, "orthographic")
 
+    def test_left_drag_orbits_camera(self):
+        start_az = self.widget.camera_azimuth
+        start_el = self.widget.camera_elevation
+        press = QMouseEvent(
+            QEvent.MouseButtonPress, QPoint(120, 80), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier
+        )
+        move = QMouseEvent(
+            QEvent.MouseMove, QPoint(180, 110), Qt.NoButton, Qt.LeftButton, Qt.NoModifier
+        )
+        self.widget.mousePressEvent(press)
+        self.widget.mouseMoveEvent(move)
+        self.assertNotEqual(self.widget.camera_azimuth, start_az)
+        self.assertNotEqual(self.widget.camera_elevation, start_el)
+
     def test_camera_zoom_and_pan(self):
         init_dist = self.widget.camera_distance
         self.widget.zoom_in()
@@ -113,6 +129,28 @@ class TestOpenGLWidget(unittest.TestCase):
         self.widget.reset_view()
         self.assertEqual(self.widget.camera_distance, 7.0)
         self.assertEqual(self.widget.camera_pan, [0.0, 0.0])
+
+    def test_fov_and_scene_objects_api(self):
+        self.widget.set_fov(60.0)
+        self.assertEqual(self.widget.fov_deg, 60.0)
+        self.widget.set_show_faces(False)
+        self.assertFalse(self.widget.show_faces)
+        self.widget.set_object_type("sphere")
+        self.assertEqual(self.widget.object_type, "sphere")
+        self.widget.set_object_type("cylinder")
+        self.assertEqual(self.widget.object_type, "cylinder")
+        import numpy as np
+        payload = [{
+            "id": "a",
+            "kind": "cube",
+            "model": np.eye(4),
+            "selected": True,
+            "color": (0.3, 0.7, 0.6),
+        }]
+        self.widget.set_scene_objects(payload)
+        self.assertEqual(len(self.widget.scene_objects), 1)
+        self.widget.set_scene_objects(None)
+        self.assertIsNone(self.widget.scene_objects)
 
     def test_reset_transformations(self):
         self.widget.set_transformations(tx=5.0, ty=5.0, tz=5.0, sx=3.0, sy=3.0, sz=3.0)
@@ -168,7 +206,7 @@ class TestDualRendererIntegration(unittest.TestCase):
         self.controller.on_module_selected("clipping")
         self.assertEqual(self.window.get_active_renderer(), "2d")
 
-        self.controller.on_module_selected("image_processing")
+        self.controller.on_module_selected("theorems")
         self.assertEqual(self.window.get_active_renderer(), "2d")
 
         # Switching back to 3D Projections works smoothly

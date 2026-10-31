@@ -89,6 +89,62 @@ class TestSortingPlayground(unittest.TestCase):
                     finally:
                         painter.end()
 
+    def test_style_motions_are_distinct_on_swap(self):
+        """Each style must use different kinematics, not a shared hop path."""
+        from graphics.sorting_motion import motion_for
+
+        event = SortEvent(
+            SortEventType.SWAP,
+            array=[4, 1],
+            swapping_indices=(0, 1),
+            indices=[0, 1],
+        )
+        centers = [80.0, 240.0]
+        base_y = 200.0
+        t = 0.45
+        poses = {
+            style: motion_for(style).pose(0, centers, base_y, event, t, False, 20.0)
+            for style in ("balls", "marbles", "cars", "cubes", "bars")
+        }
+
+        self.assertLess(poses["balls"].y, base_y - 30.0, "balls should hop well above the floor")
+        self.assertLess(abs(poses["marbles"].y - base_y), 12.0, "marbles should stay on the rail")
+        self.assertGreater(abs(poses["marbles"].rotation_deg), 30.0, "marbles should roll")
+        self.assertGreater(abs(poses["cars"].y - base_y), 5.0, "cars should change lanes while passing")
+        self.assertGreater(abs(poses["cars"].rotation_deg), 15.0, "car wheels should rotate")
+        self.assertLess(poses["cubes"].y, base_y - 20.0, "cubes should lift before sliding")
+        self.assertAlmostEqual(poses["bars"].y, base_y, places=5)
+        self.assertLess(poses["balls"].y, poses["marbles"].y - 20.0)
+
+    def test_style_compare_behaviours_differ(self):
+        from graphics.sorting_motion import motion_for
+
+        event = SortEvent(
+            SortEventType.COMPARE,
+            array=[3, 8],
+            comparing_indices=(0, 1),
+            indices=[0, 1],
+        )
+        centers = [100.0, 200.0]
+        base_y = 180.0
+        t = 0.5
+        ball = motion_for("balls").pose(0, centers, base_y, event, t, False, 20.0)
+        marble = motion_for("marbles").pose(0, centers, base_y, event, t, False, 20.0)
+        cube = motion_for("cubes").pose(0, centers, base_y, event, t, False, 20.0)
+        self.assertLess(ball.y, base_y - 5.0)
+        self.assertNotEqual(marble.x, centers[0])
+        self.assertGreater(abs(cube.tilt_deg), 4.0)
+
+    def test_reduced_motion_keeps_items_in_slots(self):
+        from graphics.sorting_motion import motion_for
+
+        event = SortEvent(SortEventType.SWAP, array=[2, 1], swapping_indices=(0, 1), indices=[0, 1])
+        centers = [50.0, 150.0]
+        for style in ("balls", "marbles", "cars", "cubes", "bars"):
+            pose = motion_for(style).pose(0, centers, 100.0, event, 0.4, True, 16.0)
+            self.assertAlmostEqual(pose.x, 50.0)
+            self.assertAlmostEqual(pose.y, 100.0)
+
     def test_reduced_motion_mode(self):
         """Verify reduced motion disables interpolation displacement."""
         renderer = SortingPlaygroundRenderer()

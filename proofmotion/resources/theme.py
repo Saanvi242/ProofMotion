@@ -141,10 +141,10 @@ def build_stylesheet() -> str:
         color: #0F172A;
     }}
     #AppSubtitle {{
-        color: #64748B;
+        color: #7A716B;
         font-size: 11px;
-        font-weight: 500;
-        letter-spacing: 0.5px;
+        font-weight: 700;
+        letter-spacing: 2.2px;
     }}
     #NavPillBar {{
         background-color: {c['bg_app']};
@@ -158,7 +158,7 @@ def build_stylesheet() -> str:
         color: #64748B;
         font-size: {TYPOGRAPHY['nav_label']}px;
         font-weight: 500;
-        padding: 7px 14px;
+        padding: 7px 10px;
     }}
     #NavTab:hover {{
         background-color: {c['selected_bg']};
@@ -169,6 +169,162 @@ def build_stylesheet() -> str:
         border-color: #D8D1FF;
         color: {c['accent_gold_pressed']};
         font-weight: 600;
+    }}
+    #StudioLaunchButton {{
+        background-color: {c['accent_gold']};
+        border: none;
+        border-radius: 10px;
+        color: #FFFFFF;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        min-height: 38px;
+        padding: 8px 16px;
+    }}
+    #StudioLaunchButton:hover {{
+        background-color: {c['accent_gold_hover']};
+    }}
+    #StudioLaunchButton:pressed {{
+        background-color: {c['accent_gold_pressed']};
+    }}
+    #StudioLeaveButton {{
+        background-color: transparent;
+        border: 1px solid #2A9A8C;
+        border-radius: 10px;
+        color: #CCFBF1;
+        font-size: 13.5px;
+        font-weight: 600;
+        min-height: 38px;
+        padding: 8px 14px;
+    }}
+    #StudioLeaveButton:hover {{
+        background-color: rgba(94, 234, 212, 0.16);
+        border-color: #5EEAD4;
+        color: #FFFFFF;
+    }}
+    #StudioModeBar {{
+        background-color: #10131A;
+        border: 1px solid #1F2A32;
+        border-radius: 10px;
+    }}
+    #StudioModeChip {{
+        background-color: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: #94A3B8;
+        font-size: 13px;
+        font-weight: 600;
+        min-height: 30px;
+        padding: 6px 12px;
+    }}
+    #StudioModeChip:hover {{
+        color: #E2E8F0;
+        background-color: rgba(94, 234, 212, 0.08);
+    }}
+    #StudioModeChip[selected="true"] {{
+        background-color: #5EEAD4;
+        color: #07080D;
+    }}
+    #AppHeader[studio="true"] {{
+        background-color: #07080D;
+        border-bottom: 1px solid #1A1D27;
+    }}
+    #AppHeader[studio="true"] #AppSubtitle {{
+        color: #5EEAD4;
+        letter-spacing: 2px;
+    }}
+    #StatusBar[studio="true"] {{
+        background-color: #05060A;
+        border-top: 1px solid #1A1D27;
+        color: #64748B;
+    }}
+    #StudioHost, #StudioStage {{
+        background-color: #07080D;
+        border: none;
+    }}
+    #StudioViewport {{
+        background-color: #0A0C12;
+        border: 1px solid #1F2A32;
+        border-radius: 16px;
+    }}
+    #StudioHint {{
+        color: #5EEAD4;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    #StudioToolRail, #StudioMatrixHud, #StudioActionBar {{
+        background-color: rgba(10, 12, 18, 0.92);
+        border: 1px solid rgba(94, 234, 212, 0.18);
+        border-radius: 18px;
+    }}
+    #StudioIconBtn {{
+        background-color: transparent;
+        border: none;
+        border-radius: 11px;
+        color: #CBD5E1;
+    }}
+    #StudioIconBtn:hover {{
+        background-color: rgba(94, 234, 212, 0.12);
+    }}
+    #StudioIconBtn:checked {{
+        background-color: #5EEAD4;
+    }}
+    #StudioActionBtn {{
+        background-color: transparent;
+        border: none;
+        border-radius: 9px;
+        color: #E2E8F0;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 0 14px;
+        min-height: 34px;
+    }}
+    #StudioActionBtn:hover {{
+        background-color: rgba(94, 234, 212, 22);
+        color: #5EEAD4;
+    }}
+    #StudioActionBtn:checked {{
+        background-color: #5EEAD4;
+        color: #07080D;
+    }}
+    #StudioHudKicker {{
+        color: #5EEAD4;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.8px;
+    }}
+    #StudioHudName {{
+        color: #F8FAFC;
+        font-size: 15px;
+        font-weight: 600;
+    }}
+    #StudioHudMatrix {{
+        color: #CBD5E1;
+        font-family: {FONT_FAMILY_MONO};
+        font-size: 12px;
+        font-weight: 500;
+    }}
+    #StudioHudMeta {{
+        color: #64748B;
+        font-size: 12px;
+        font-weight: 500;
+    }}
+    #StudioFilmstrip {{
+        background-color: #07080D;
+        border: none;
+    }}
+    QDoubleSpinBox#ParamInput {{
+        background-color: {c['bg_input']};
+        border: 1px solid {c['border']};
+        border-radius: {RADIUS['control']}px;
+        color: {c['text_primary']};
+        font-size: {TYPOGRAPHY['input']}px;
+        padding: 3px 6px;
+        min-height: 28px;
+    }}
+    QDoubleSpinBox#ParamInput:focus {{
+        background-color: #FFFFFF;
+        border: 1px solid {c['accent_gold']};
     }}
     #CentralWorkspace {{
         background-color: #FFFFFF;
@@ -664,5 +820,136 @@ def build_stylesheet() -> str:
         border: 1px solid {c['border']};
         color: {c['text_primary']};
         padding: 4px 7px;
+    }}
+    #HomeHost {{
+        background: transparent;
+    }}
+    #HomeHeading {{
+        color: {c['text_primary']};
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.6px;
+    }}
+    #HomeSubheading {{
+        color: {c['text_muted']};
+        font-size: 15px;
+        font-weight: 400;
+        max-width: 720px;
+    }}
+    #HomeScroll {{
+        background: transparent;
+        border: none;
+    }}
+    #CatalogGridHost {{
+        background: transparent;
+    }}
+    #HomeBackButton {{
+        background-color: {c['bg_app']};
+        border: 1px solid {c['border_soft']};
+        border-radius: 10px;
+        color: {c['text_secondary']};
+        font-size: 13.5px;
+        font-weight: 600;
+        min-height: 36px;
+        padding: 6px 12px;
+    }}
+    #HomeBackButton:hover {{
+        background-color: {c['selected_bg']};
+        color: {c['text_primary']};
+    }}
+    #LessonModuleChip {{
+        background-color: {c['selected_bg']};
+        border: 1px solid #D8D1FF;
+        border-radius: 10px;
+        color: {c['accent_gold_pressed']};
+        font-size: 13.5px;
+        font-weight: 650;
+        min-height: 36px;
+        padding: 6px 14px;
+    }}
+    #TopicCard {{
+        background-color: #FFFFFF;
+        border: 1px solid {c['border_workspace']};
+        border-radius: 16px;
+    }}
+    #TopicCard[hover="true"], #TopicCard[selected="true"] {{
+        border-color: #C9BFFF;
+    }}
+    #TopicCardPreview {{
+        background: transparent;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+    }}
+    #TopicCardBody {{
+        background-color: #FFFFFF;
+        border-top: 1px solid {c['border_soft']};
+        border-bottom-left-radius: 16px;
+        border-bottom-right-radius: 16px;
+    }}
+    #TopicCardTitle {{
+        color: {c['text_primary']};
+        font-size: 16px;
+        font-weight: 700;
+    }}
+    #TopicCardCaption {{
+        color: {c['text_secondary']};
+        font-size: 12.5px;
+        font-weight: 400;
+    }}
+    #TopicCardMeta {{
+        color: {c['accent_gold']};
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        padding-top: 4px;
+    }}
+    #GatewayTile {{
+        background-color: #FFFFFF;
+        border: 1px solid {c['border_workspace']};
+        border-radius: 20px;
+    }}
+    #GatewayTile[kind="studio"] {{
+        background-color: #0B0D14;
+        border: 1px solid #1F2A32;
+    }}
+    #GatewayPreview {{
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
+    }}
+    #GatewayBody {{
+        background-color: #FFFFFF;
+        border-top: 1px solid {c['border_soft']};
+        border-bottom-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+    }}
+    #GatewayTile[kind="studio"] #GatewayBody {{
+        background-color: #0B0D14;
+        border-top: 1px solid #1F2A32;
+    }}
+    #GatewayEyebrow {{
+        color: {c['accent_gold']};
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+    }}
+    #GatewayTitle {{
+        color: {c['text_primary']};
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+    }}
+    #GatewayCaption {{
+        color: {c['text_secondary']};
+        font-size: 14px;
+        font-weight: 400;
+    }}
+    #GatewayTile[kind="studio"] #GatewayEyebrow {{
+        color: #5EEAD4;
+    }}
+    #GatewayTile[kind="studio"] #GatewayTitle {{
+        color: #F8FAFC;
+    }}
+    #GatewayTile[kind="studio"] #GatewayCaption {{
+        color: #94A3B8;
     }}
     """

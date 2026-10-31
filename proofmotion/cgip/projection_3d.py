@@ -310,6 +310,113 @@ def get_wireframe_pyramid(base_side: float = 2.4, height: float = 2.5) -> Tuple[
     return vertices, edges
 
 
+def get_wireframe_sphere(
+    radius: float = 1.2,
+    slices: int = 16,
+    stacks: int = 12,
+) -> Tuple[List[Tuple[float, float, float]], List[Tuple[int, int]], List[Tuple[int, int, int]]]:
+    """
+    UV sphere centered at the origin.
+    Returns (vertices, wireframe edges, triangle faces).
+    """
+    slices = max(3, int(slices))
+    stacks = max(2, int(stacks))
+    vertices: List[Tuple[float, float, float]] = []
+    for i in range(stacks + 1):
+        phi = math.pi * i / stacks
+        y = radius * math.cos(phi)
+        ring_r = radius * math.sin(phi)
+        for j in range(slices):
+            theta = 2.0 * math.pi * j / slices
+            x = ring_r * math.cos(theta)
+            z = ring_r * math.sin(theta)
+            vertices.append((float(x), float(y), float(z)))
+
+    edges: List[Tuple[int, int]] = []
+    faces: List[Tuple[int, int, int]] = []
+    for i in range(stacks + 1):
+        for j in range(slices):
+            a = i * slices + j
+            b = i * slices + (j + 1) % slices
+            if i < stacks:
+                edges.append((a, b))
+            if i < stacks:
+                c = (i + 1) * slices + j
+                edges.append((a, c))
+                d = (i + 1) * slices + (j + 1) % slices
+                if i == 0:
+                    faces.append((a, c, d))
+                elif i == stacks - 1:
+                    faces.append((a, c, b))
+                else:
+                    faces.append((a, c, d))
+                    faces.append((a, d, b))
+    return vertices, edges, faces
+
+
+def get_wireframe_cylinder(
+    radius: float = 0.85,
+    height: float = 2.2,
+    slices: int = 20,
+) -> Tuple[List[Tuple[float, float, float]], List[Tuple[int, int]], List[Tuple[int, int, int]]]:
+    """
+    Cylinder aligned with the Y axis, centered at the origin.
+    Returns (vertices, wireframe edges, triangle faces).
+    Vertex layout: bottom ring [0..slices), top ring [slices..2*slices),
+    bottom center, top center.
+    """
+    slices = max(3, int(slices))
+    y0 = -height / 2.0
+    y1 = height / 2.0
+    vertices: List[Tuple[float, float, float]] = []
+    for y in (y0, y1):
+        for j in range(slices):
+            theta = 2.0 * math.pi * j / slices
+            vertices.append((radius * math.cos(theta), y, radius * math.sin(theta)))
+    vertices.append((0.0, y0, 0.0))
+    vertices.append((0.0, y1, 0.0))
+    bottom_center = 2 * slices
+    top_center = 2 * slices + 1
+
+    edges: List[Tuple[int, int]] = []
+    faces: List[Tuple[int, int, int]] = []
+    for j in range(slices):
+        jn = (j + 1) % slices
+        b0, b1 = j, jn
+        t0, t1 = slices + j, slices + jn
+        edges.append((b0, b1))
+        edges.append((t0, t1))
+        edges.append((b0, t0))
+        faces.append((b0, b1, t1))
+        faces.append((b0, t1, t0))
+        faces.append((bottom_center, b1, b0))
+        faces.append((top_center, t0, t1))
+    return vertices, edges, faces
+
+
+def get_mesh_3d(kind: str):
+    """Return (vertices, edges, faces) for a named 3D primitive."""
+    kind = (kind or "cube").lower()
+    if kind == "pyramid":
+        verts, edges = get_wireframe_pyramid()
+        faces = [(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4), (0, 3, 2), (0, 2, 1)]
+        return verts, edges, faces
+    if kind == "sphere":
+        return get_wireframe_sphere()
+    if kind == "cylinder":
+        return get_wireframe_cylinder()
+    verts, edges = get_wireframe_cube()
+    faces = [
+        (4, 5, 6), (4, 6, 7),  # front
+        (1, 0, 3), (1, 3, 2),  # back
+        (7, 6, 2), (7, 2, 3),  # top
+        (0, 1, 5), (0, 5, 4),  # bottom
+        (5, 1, 2), (5, 2, 6),  # right
+        (0, 4, 7), (0, 7, 3),  # left
+    ]
+    return verts, edges, faces
+
+
 # --------------------------------------------------------------------------
 # Demonstration & Trace Generator
 # --------------------------------------------------------------------------

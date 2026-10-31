@@ -1,9 +1,8 @@
 """
 ui/main_window.py
 -------------------
-Top-level QMainWindow that assembles the header with module navigation,
-topic sidebar, parameter panel, visualization area, view controls,
-animation controls, and equation panel into ProofMotion's layout.
+Top-level QMainWindow: Learn/Studio gateway, topic catalog, lesson
+workspace, and Studio playground.
 """
 
 import os
@@ -30,13 +29,15 @@ from ui.clipping_tabs import ClippingTabBar
 
 from graphics.visualization_widget import VisualizationWidget
 from graphics.opengl_widget import OpenGL3DWidget
+from playground.ui.playground_host import PlaygroundHost
+from ui.home_screens import HomeHost, LEARNING_TOPICS
 
 
 def create_proofmotion_logo(size: int = 44) -> QPixmap:
     """
     Generate or load the vibrant, dimensional geometric mark for ProofMotion.
-    Loads high-res 3D icon with subtle lighting and glowing cyan vectors,
-    falling back to programmatic vector rendering if not found.
+    Loads high-res mark from resources/logo.png, falling back to programmatic
+    vector rendering if not found.
     """
     logo_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resources", "logo.png")
     if os.path.isfile(logo_file):
@@ -48,51 +49,53 @@ def create_proofmotion_logo(size: int = 44) -> QPixmap:
     pix.fill(Qt.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing, True)
+    p.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-    scale = size / 42.0
+    scale = size / 44.0
 
     # Rich brand gradient background
     grad = QLinearGradient(0, 0, size, size)
-    grad.setColorAt(0.0, QColor("#6C5CE7"))   # Electric purple
-    grad.setColorAt(1.0, QColor("#4D3BB8"))   # Deep rich indigo
+    grad.setColorAt(0.0, QColor("#7760ED"))
+    grad.setColorAt(0.5, QColor("#6E57DD"))
+    grad.setColorAt(1.0, QColor("#5741C8"))
 
     # Outer subtle stroke & rich gradient body
-    p.setPen(QPen(QColor(255, 255, 255, 50), 1.2 * scale))
+    p.setPen(QPen(QColor(255, 255, 255, 40), 1.2 * scale))
     p.setBrush(QBrush(grad))
-    p.drawRoundedRect(QRectF(1.0 * scale, 1.0 * scale, (size - 2.0) * scale, (size - 2.0) * scale), 11.0 * scale, 11.0 * scale)
+    p.drawRoundedRect(QRectF(1.0 * scale, 1.0 * scale, (size - 2.0) * scale, (size - 2.0) * scale), 10.5 * scale, 10.5 * scale)
 
     # Translucent geometric facet (triangle)
     poly = QPolygonF([
-        QPointF(9.5 * scale, 32.0 * scale),
-        QPointF(32.0 * scale, 32.0 * scale),
-        QPointF(9.5 * scale, 9.5 * scale)
+        QPointF(10.0 * scale, 33.5 * scale),
+        QPointF(33.5 * scale, 33.5 * scale),
+        QPointF(10.0 * scale, 10.0 * scale)
     ])
     p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(QColor(255, 255, 255, 26)))
+    p.setBrush(QBrush(QColor(255, 255, 255, 28)))
     p.drawPolygon(poly)
 
     # Subtle vector hypotenuse guide line
-    guide_pen = QPen(QColor(255, 255, 255, 80), 1.0 * scale, Qt.DashLine)
+    guide_pen = QPen(QColor(255, 255, 255, 120), 1.0 * scale, Qt.DashLine)
     p.setPen(guide_pen)
-    p.drawLine(QPointF(9.5 * scale, 9.5 * scale), QPointF(32.0 * scale, 32.0 * scale))
+    p.drawLine(QPointF(10.0 * scale, 10.0 * scale), QPointF(33.5 * scale, 33.5 * scale))
 
     # Coordinate Axes in crisp white with round caps
     axis_pen = QPen(QColor("#FFFFFF"), 2.2 * scale, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
     p.setPen(axis_pen)
-    p.drawLine(QPointF(9.5 * scale, 32.0 * scale), QPointF(33.5 * scale, 32.0 * scale))
-    p.drawLine(QPointF(9.5 * scale, 32.0 * scale), QPointF(9.5 * scale, 8.0 * scale))
+    p.drawLine(QPointF(10.0 * scale, 33.5 * scale), QPointF(34.0 * scale, 33.5 * scale))
+    p.drawLine(QPointF(10.0 * scale, 33.5 * scale), QPointF(10.0 * scale, 9.5 * scale))
 
     # Stepping pixel blocks (Rasterization / Computation steps)
-    p.setPen(QPen(QColor(255, 255, 255, 140), 0.8 * scale))
+    p.setPen(QPen(QColor(255, 255, 255, 180), 0.8 * scale))
     p.setBrush(QBrush(QColor("#FFFFFF")))
-    px_size = 4.4 * scale
-    for gx, gy in [(12.0, 12.0), (17.5, 17.5), (23.5, 23.5)]:
-        p.drawRoundedRect(QRectF((gx - 0.5) * scale, (gy - 0.5) * scale, px_size, px_size), 1.2 * scale, 1.2 * scale)
+    px_size = 3.6 * scale
+    for gx, gy in [(15.0, 27.5), (20.5, 22.0), (26.5, 16.0)]:
+        p.drawRoundedRect(QRectF((gx - 0.5) * scale, (gy - 0.5) * scale, px_size, px_size), 0.8 * scale, 0.8 * scale)
 
-    # Origin node (Bright glowing cyan anchor point)
-    p.setBrush(QBrush(QColor("#00F5D4")))
-    p.setPen(QPen(QColor("#FFFFFF"), 1.6 * scale))
-    p.drawEllipse(QPointF(9.5 * scale, 32.0 * scale), 2.8 * scale, 2.8 * scale)
+    # Origin node (Bright glowing warm yellow anchor point with white ring)
+    p.setPen(QPen(QColor("#FFFFFF"), 1.8 * scale))
+    p.setBrush(QBrush(QColor("#FFE57B")))
+    p.drawEllipse(QPointF(10.0 * scale, 33.5 * scale), 2.8 * scale, 2.8 * scale)
 
     p.end()
     return pix
@@ -149,17 +152,17 @@ def create_module_icon(module_key: str, color_hex: str = "#8FA3B8") -> QIcon:
         p.setPen(QPen(QColor(COLORS["accent_gold"]), 2.2))
         p.drawPoint(QPointF(4.0, 15.5))
         p.drawPoint(QPointF(16.0, 4.5))
-    elif module_key == "image_processing":
-        # Photo frame with mountains and sun
-        p.setPen(QPen(color, 1.5))
+    elif module_key == "curves":
+        # Cubic curve with control polygon
+        p.setPen(QPen(color, 1.2, Qt.DashLine, Qt.RoundCap, Qt.RoundJoin))
+        p.drawPolyline(QPolygonF([QPointF(3.0, 15.5), QPointF(7.0, 4.0), QPointF(13.5, 16.5), QPointF(17.5, 5.5)]))
+        p.setPen(QPen(color, 1.9, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(QRectF(2.5, 3.5, 15.0, 13.0), 1.5, 1.5)
-        # Small circle / sun
+        p.drawArc(QRectF(2.2, 4.0, 16.0, 13.0), 200 * 16, 150 * 16)
         p.setBrush(QBrush(color))
-        p.drawEllipse(QPointF(6.0, 7.0), 1.5, 1.5)
-        # Mountain peaks
-        p.setBrush(Qt.NoBrush)
-        p.drawPolyline(QPolygonF([QPointF(3.5, 14.5), QPointF(8.0, 9.5), QPointF(11.5, 13.0), QPointF(14.0, 10.5), QPointF(16.5, 14.5)]))
+        p.setPen(Qt.NoPen)
+        for gx, gy in [(3.0, 15.5), (7.0, 4.0), (13.5, 16.5), (17.5, 5.5)]:
+            p.drawEllipse(QPointF(gx, gy), 1.7, 1.7)
     elif module_key == "projections_3d":
         # Isometric / perspective wireframe cube
         p.setPen(QPen(color, 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -168,13 +171,42 @@ def create_module_icon(module_key: str, color_hex: str = "#8FA3B8") -> QIcon:
         p.drawPolygon(QPolygonF([QPointF(10.0, 2.5), QPointF(16.5, 6.0), QPointF(10.0, 9.5), QPointF(3.5, 6.0)])) # top diamond
         p.drawPolyline(QPolygonF([QPointF(3.5, 6.0), QPointF(3.5, 13.5), QPointF(10.0, 17.5), QPointF(10.0, 9.5)])) # left face
         p.drawPolyline(QPolygonF([QPointF(16.5, 6.0), QPointF(16.5, 13.5), QPointF(10.0, 17.5)])) # right face
+    elif module_key == "playground":
+        p.setPen(QPen(color, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(QRectF(3.0, 3.0, 14.0, 14.0))
+        p.drawPolygon(QPolygonF([QPointF(6.0, 14.0), QPointF(11.5, 14.0), QPointF(8.8, 8.5)]))
+        p.drawEllipse(QRectF(11.2, 4.5, 4.6, 4.6))
 
     p.end()
     return QIcon(pix)
 
 
+def create_studio_icon(color_hex: str = "#FFFFFF") -> QIcon:
+    """Four-point spark used only for the Studio launch control."""
+    pix = QPixmap(18, 18)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    color = QColor(color_hex)
+    p.setPen(QPen(color, 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(QBrush(color))
+    spark = QPolygonF([
+        QPointF(9.0, 1.5), QPointF(10.6, 7.4), QPointF(16.5, 9.0),
+        QPointF(10.6, 10.6), QPointF(9.0, 16.5), QPointF(7.4, 10.6),
+        QPointF(1.5, 9.0), QPointF(7.4, 7.4),
+    ])
+    p.drawPolygon(spark)
+    p.end()
+    return QIcon(pix)
+
+
+MODULE_TITLES = {key: title for key, title, _caption, _meta in LEARNING_TOPICS}
+
+
 class MainWindow(QMainWindow):
     moduleSelected = pyqtSignal(str)
+    homeRequested = pyqtSignal()
 
     def __init__(self, theorems, parent=None):
         super().__init__(parent)
@@ -213,7 +245,22 @@ class MainWindow(QMainWindow):
         self.equation_panel.setMaximumHeight(300)
         body_layout.addWidget(self.equation_panel, stretch=1)
 
-        root.addWidget(self._body_widget, stretch=1)
+        self.playground_host = PlaygroundHost()
+        self.playground_host.statusMessage.connect(self.set_status)
+        self.playground_host.fullscreenToggled.connect(self.toggle_canvas_fullscreen)
+        self.playground_host.modeChanged.connect(self._set_studio_mode_chips)
+
+        self.home_host = HomeHost()
+        self.home_host.learnChosen.connect(self.show_catalog)
+        self.home_host.studioChosen.connect(self._on_studio_open_from_home)
+        self.home_host.topicChosen.connect(self._on_module_clicked)
+        self._module_buttons = self.home_host._module_buttons
+
+        self._workspace_stack = QStackedWidget()
+        self._workspace_stack.addWidget(self.home_host)         # 0: Learn / Studio home
+        self._workspace_stack.addWidget(self._body_widget)      # 1: lesson workspace
+        self._workspace_stack.addWidget(self.playground_host)   # 2: Studio
+        root.addWidget(self._workspace_stack, stretch=1)
         self._status_bar = self._build_status_bar()
         root.addWidget(self._status_bar)
 
@@ -227,6 +274,7 @@ class MainWindow(QMainWindow):
         f11_shortcut.activated.connect(self._toggle_fullscreen_shortcut)
 
         self._geo_background.lower()
+        self.show_home()
 
     # ------------------------------------------------------------------
     def _build_header(self) -> QWidget:
@@ -235,8 +283,8 @@ class MainWindow(QMainWindow):
         header.setFixedHeight(74)
 
         header_row = QHBoxLayout(header)
-        header_row.setContentsMargins(36, 10, 36, 10)
-        header_row.setSpacing(24)
+        header_row.setContentsMargins(24, 10, 24, 10)
+        header_row.setSpacing(16)
 
         brand = QWidget()
         brand_row = QHBoxLayout(brand)
@@ -255,64 +303,180 @@ class MainWindow(QMainWindow):
         title_col.setSpacing(2)
         title_col.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
 
-        title = QLabel()
-        title.setObjectName("AppTitle")
-        title.setTextFormat(Qt.RichText)
-        title.setText('<span style="color: #0F172A; font-weight: 700;">Proof</span><span style="color: #6C5CE7; font-weight: 700;">Motion</span>')
-        title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._title_label = QLabel()
+        self._title_label.setObjectName("AppTitle")
+        self._title_label.setTextFormat(Qt.RichText)
+        self._title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._set_wordmark(studio=False)
 
-        subtitle = QLabel("FROM THEORY TO VISUALIZATION.")
-        subtitle.setObjectName("AppSubtitle")
-        subtitle.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._subtitle_label = QLabel("FROM THEORY TO MOTION")
+        self._subtitle_label.setObjectName("AppSubtitle")
+        self._subtitle_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        title_col.addWidget(title)
-        title_col.addWidget(subtitle)
+        title_col.addWidget(self._title_label)
+        title_col.addWidget(self._subtitle_label)
         brand_row.addWidget(title_widget, alignment=Qt.AlignVCenter)
         header_row.addWidget(brand, alignment=Qt.AlignVCenter)
+
+        self._home_back_btn = QPushButton("←  Learn")
+        self._home_back_btn.setObjectName("HomeBackButton")
+        self._home_back_btn.setCursor(Qt.PointingHandCursor)
+        self._home_back_btn.clicked.connect(self._on_home_back)
+        self._home_back_btn.hide()
+        header_row.addWidget(self._home_back_btn, alignment=Qt.AlignVCenter)
+
+        self._module_chip = QPushButton("Algorithms")
+        self._module_chip.setObjectName("LessonModuleChip")
+        self._module_chip.setCheckable(False)
+        self._module_chip.setEnabled(False)
+        self._module_chip.hide()
+        header_row.addWidget(self._module_chip, alignment=Qt.AlignVCenter)
+
         header_row.addStretch(1)
 
-        pill_bar = QWidget()
-        pill_bar.setObjectName("NavPillBar")
-        nav_row = QHBoxLayout(pill_bar)
-        nav_row.setContentsMargins(4, 4, 4, 4)
-        nav_row.setSpacing(2)
-
+        self._nav_pill_bar = QWidget()
+        self._nav_pill_bar.setObjectName("NavPillBar")
+        self._nav_pill_bar.hide()
         self._module_buttons = {}
-        modules = [
-            ("theorems", "Theorems"),
-            ("algorithms", "Algorithms"),
-            ("transformations", "Transformations"),
-            ("rasterization", "Rasterization"),
-            ("clipping", "Clipping"),
-        ]
+        header_row.addWidget(self._nav_pill_bar)
 
-        for mod_key, mod_name in modules:
-            btn = QPushButton(f"  {mod_name}")
-            btn.setObjectName("NavTab")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setIcon(create_module_icon(mod_key, "#7B849A"))
-            btn.setIconSize(QSize(16, 16))
-            btn.clicked.connect(lambda ch, k=mod_key: self._on_module_clicked(k))
-            nav_row.addWidget(btn)
-            self._module_buttons[mod_key] = btn
+        self._studio_mode_bar = QWidget()
+        self._studio_mode_bar.setObjectName("StudioModeBar")
+        mode_row = QHBoxLayout(self._studio_mode_bar)
+        mode_row.setContentsMargins(4, 4, 4, 4)
+        mode_row.setSpacing(2)
+        self._studio_mode_buttons = {}
+        for key, label in (("2d", "2D"), ("3d", "3D"), ("basis", "Basis"), ("lift", "Lift"), ("run", "Run")):
+            chip = QPushButton(label)
+            chip.setObjectName("StudioModeChip")
+            chip.setCheckable(True)
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.clicked.connect(lambda _=False, k=key: self._on_studio_mode_clicked(k))
+            mode_row.addWidget(chip)
+            self._studio_mode_buttons[key] = chip
+        self._studio_mode_bar.hide()
+        header_row.addWidget(self._studio_mode_bar, alignment=Qt.AlignVCenter)
 
-        header_row.addWidget(pill_bar, alignment=Qt.AlignVCenter)
+        self._studio_leave_btn = QPushButton("  Leave Studio")
+        self._studio_leave_btn.setObjectName("StudioLeaveButton")
+        self._studio_leave_btn.setCursor(Qt.PointingHandCursor)
+        self._studio_leave_btn.setToolTip("Leave Studio and go back")
+        self._studio_leave_btn.clicked.connect(self._on_studio_leave)
+        self._studio_leave_btn.hide()
+        header_row.addWidget(self._studio_leave_btn, alignment=Qt.AlignVCenter)
+
+        self._studio_open_btn = QPushButton("  Studio")
+        self._studio_open_btn.setObjectName("StudioLaunchButton")
+        self._studio_open_btn.setCursor(Qt.PointingHandCursor)
+        self._studio_open_btn.setIcon(create_studio_icon("#FFFFFF"))
+        self._studio_open_btn.setIconSize(QSize(16, 16))
+        self._studio_open_btn.setToolTip("Leave the lessons and make something yourself")
+        self._studio_open_btn.clicked.connect(self._on_studio_open)
+        header_row.addWidget(self._studio_open_btn, alignment=Qt.AlignVCenter)
+
+        self._last_lesson_module = "algorithms"
+        self._studio_return = "home"
+        self._surface = "gateway"
         return header
 
     def _on_module_clicked(self, module_key: str):
         self.select_module(module_key)
         self.moduleSelected.emit(module_key)
 
+    def _on_studio_open(self):
+        if self.lessons_active():
+            self._studio_return = "lesson"
+        elif self.home_active() and self.home_host.on_catalog():
+            self._studio_return = "catalog"
+        else:
+            self._studio_return = "home"
+        self._on_module_clicked("playground")
+
+    def _on_studio_open_from_home(self):
+        self._studio_return = "home"
+        self._on_module_clicked("playground")
+
+    def _on_studio_leave(self):
+        if self._studio_return == "lesson" and self._last_lesson_module:
+            self._on_module_clicked(self._last_lesson_module)
+        elif self._studio_return == "catalog":
+            self.show_catalog()
+            self.homeRequested.emit()
+        else:
+            self.show_home()
+            self.homeRequested.emit()
+
+    def _on_home_back(self):
+        if self.lessons_active():
+            self.show_catalog()
+            self.homeRequested.emit()
+        else:
+            self.show_home()
+            self.homeRequested.emit()
+
+    def _on_studio_mode_clicked(self, kind: str):
+        if hasattr(self, "playground_host"):
+            self.playground_host.open_mode(kind)
+        self._set_studio_mode_chips(kind)
+
+    def _set_wordmark(self, studio: bool):
+        if studio:
+            self._title_label.setText(
+                '<span style="color: #F8FAFC; font-weight: 800; letter-spacing: -0.5px;">Proof</span>'
+                '<span style="color: #6F5BEF; font-weight: 800; letter-spacing: -0.5px;">Motion</span>'
+            )
+        else:
+            self._title_label.setText(
+                '<span style="color: #0D172C; font-weight: 800; letter-spacing: -0.5px;">Proof</span>'
+                '<span style="color: #6F5BEF; font-weight: 800; letter-spacing: -0.5px;">Motion</span>'
+            )
+
+    def _set_studio_mode_chips(self, kind: str):
+        for key, chip in self._studio_mode_buttons.items():
+            on = key == kind
+            chip.setChecked(on)
+            chip.setProperty("selected", "true" if on else "false")
+            chip.style().unpolish(chip)
+            chip.style().polish(chip)
+
+    def _apply_widget_flag(self, widget, name: str, on: bool):
+        widget.setProperty(name, "true" if on else "false")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()
+
+    def set_studio_chrome(self, on: bool, mode: str = "2d"):
+        if on:
+            self.set_surface_chrome("studio", studio_mode=mode)
+        else:
+            self.set_surface_chrome("lesson")
+
+    def set_surface_chrome(self, surface: str, studio_mode: str = "2d"):
+        self._surface = surface
+        studio = surface == "studio"
+        self._apply_widget_flag(self._header_widget, "studio", studio)
+        self._apply_widget_flag(self._status_bar, "studio", studio)
+        self._set_wordmark(studio)
+        self._subtitle_label.setText("FROM THEORY TO MOTION • STUDIO" if studio else "FROM THEORY TO MOTION")
+        self._nav_pill_bar.hide()
+        self._studio_mode_bar.setVisible(studio)
+        self._studio_leave_btn.setVisible(studio)
+        self._studio_open_btn.setVisible(surface in ("catalog", "lesson"))
+        self._home_back_btn.setVisible(surface in ("catalog", "lesson"))
+        if surface == "catalog":
+            self._home_back_btn.setText("←  Home")
+        else:
+            self._home_back_btn.setText("←  Learn")
+        self._module_chip.setVisible(surface == "lesson")
+        if studio:
+            self._set_studio_mode_chips(studio_mode)
+
     def select_module(self, module_key: str):
-        for k, btn in self._module_buttons.items():
-            sel = (k == module_key)
-            btn.setChecked(sel)
-            btn.setProperty("selected", "true" if sel else "false")
-            icon_color = COLORS["accent_gold_pressed"] if sel else "#7B849A"
-            btn.setIcon(create_module_icon(k, icon_color))
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
+        if module_key != "playground":
+            self._last_lesson_module = module_key
+            self._module_chip.setText(MODULE_TITLES.get(module_key, module_key.replace("_", " ").title()))
+        if hasattr(self, "home_host"):
+            self.home_host.set_selected_topic(module_key)
 
     def _build_main_row(self, theorems) -> QWidget:
         splitter = QSplitter(Qt.Horizontal)
@@ -378,8 +542,11 @@ class MainWindow(QMainWindow):
         self.canvas_stack.setObjectName("CanvasStack")
         self.visualization_widget = VisualizationWidget()
         self.opengl_widget = OpenGL3DWidget()
+        from ui.bezier_quiz_widget import BezierQuizWidget
+        self.quiz_widget = BezierQuizWidget()
         self.canvas_stack.addWidget(self.visualization_widget) # Index 0: 2D QPainter canvas
         self.canvas_stack.addWidget(self.opengl_widget)        # Index 1: 3D Hardware OpenGL canvas
+        self.canvas_stack.addWidget(self.quiz_widget)          # Index 2: Interactive Quiz widget
 
         self.view_controls.gridToggled.connect(self.visualization_widget.set_show_grid)
         self.view_controls.gridToggled.connect(self.opengl_widget.set_show_grid)
@@ -402,18 +569,54 @@ class MainWindow(QMainWindow):
     def set_clipping_tabs_visible(self, visible: bool):
         self.clipping_tab_bar.setVisible(visible)
 
+    def show_home(self):
+        self.home_host.show_gateway()
+        self._workspace_stack.setCurrentIndex(0)
+        self.set_surface_chrome("gateway")
+        self.set_status("Welcome — Learn a topic, or open Studio.")
+
+    def show_catalog(self):
+        self.home_host.show_catalog()
+        self._workspace_stack.setCurrentIndex(0)
+        self.set_surface_chrome("catalog")
+        self.set_status("Choose a topic to open its lesson workspace.")
+
+    def show_playground(self):
+        self._workspace_stack.setCurrentIndex(2)
+        self.playground_host.enter()
+        self.set_studio_chrome(True, self.playground_host.current_mode())
+
+    def show_lessons(self):
+        self._workspace_stack.setCurrentIndex(1)
+        self.set_surface_chrome("lesson")
+
+    def home_active(self) -> bool:
+        return self._workspace_stack.currentIndex() == 0
+
+    def lessons_active(self) -> bool:
+        return self._workspace_stack.currentIndex() == 1
+
+    def playground_active(self) -> bool:
+        return self._workspace_stack.currentIndex() == 2
+
     def set_active_renderer(self, mode: str):
-        """Switch active canvas between '2d' (QPainter) and 'opengl' (QOpenGLWidget)."""
+        """Switch active canvas between '2d' (QPainter), 'opengl' (QOpenGLWidget), and 'quiz' (BezierQuizWidget)."""
         if mode == "opengl":
             self.canvas_stack.setCurrentIndex(1)
             self.opengl_widget.update()
+        elif mode == "quiz":
+            self.canvas_stack.setCurrentIndex(2)
         else:
             self.canvas_stack.setCurrentIndex(0)
             self.visualization_widget.update()
 
     def get_active_renderer(self) -> str:
-        """Return 'opengl' if OpenGL canvas is active, else '2d'."""
-        return "opengl" if self.canvas_stack.currentIndex() == 1 else "2d"
+        """Return 'opengl' if OpenGL canvas is active, 'quiz' if Quiz widget is active, else '2d'."""
+        if self.canvas_stack.currentIndex() == 1:
+            return "opengl"
+        elif self.canvas_stack.currentIndex() == 2:
+            return "quiz"
+        return "2d"
 
     @property
     def vis_stack(self):
@@ -444,24 +647,32 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def toggle_canvas_fullscreen(self, is_fullscreen: bool):
         self._is_canvas_fullscreen = is_fullscreen
+        playground_on = self.playground_active()
         if is_fullscreen:
             self._saved_splitter_sizes = self._main_splitter.sizes()
             self._header_widget.hide()
-            self.theorem_panel.hide()
-            self.parameter_panel.hide()
-            self.equation_panel.hide()
             self._status_bar.hide()
-            self.view_controls.set_fullscreen_state(True)
-            self.set_status("Focus Mode: canvas, steps, and playback (Press Esc to restore)")
+            if playground_on:
+                self.playground_host.set_focus_mode(True)
+                self.set_status("Focus Mode: studio canvas (Press Esc to restore)")
+            else:
+                self.theorem_panel.hide()
+                self.parameter_panel.hide()
+                self.equation_panel.hide()
+                self.view_controls.set_fullscreen_state(True)
+                self.set_status("Focus Mode: canvas, steps, and playback (Press Esc to restore)")
         else:
             self._header_widget.show()
-            self.theorem_panel.show()
-            self.parameter_panel.show()
-            self.equation_panel.show()
             self._status_bar.show()
-            if hasattr(self, "_saved_splitter_sizes") and self._saved_splitter_sizes:
-                self._main_splitter.setSizes(self._saved_splitter_sizes)
-            self.view_controls.set_fullscreen_state(False)
+            if playground_on:
+                self.playground_host.set_focus_mode(False)
+            else:
+                self.theorem_panel.show()
+                self.parameter_panel.show()
+                self.equation_panel.show()
+                if hasattr(self, "_saved_splitter_sizes") and self._saved_splitter_sizes:
+                    self._main_splitter.setSizes(self._saved_splitter_sizes)
+                self.view_controls.set_fullscreen_state(False)
 
     def _exit_fullscreen_if_active(self):
         if getattr(self, "_is_canvas_fullscreen", False):

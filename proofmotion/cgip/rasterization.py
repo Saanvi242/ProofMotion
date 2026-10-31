@@ -318,16 +318,25 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
         else:
             cand = [(x + sx, y), (x + sx, y + sy)]
 
+        err_before = err
         e2 = 2 * err
-        decision_info = f"Current error term: err = {err},  2·err = {e2}"
+        decision_info = f"Current error term: err = {err_before},  2·err = {e2}"
         next_x, next_y = x, y
+        step_x = e2 > -dy
+        step_y = e2 < dx
+        if step_x and step_y:
+            lean, choice = 0, "diagonal"
+        elif step_x:
+            lean, choice = -1, "x"
+        else:
+            lean, choice = 1, "y"
 
         step_expl = f"Plotted ({x}, {y}). "
-        if e2 > -dy:
+        if step_x:
             err -= dy
             next_x += sx
             step_expl += f"2·err > -dy ({e2} > {-dy}) ⟹ step X by {sx}. "
-        if e2 < dx:
+        if step_y:
             err += dx
             next_y += sy
             step_expl += f"2·err < dx ({e2} < {dx}) ⟹ step Y by {sy}."
@@ -337,7 +346,7 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
             title=f"Bresenham Step: Plot Pixel ({x}, {y})",
             equation=decision_info,
             explanation=step_expl,
-            values={"pixel": (x, y), "error": err, "candidates": cand},
+            values={"pixel": (x, y), "error": err, "decision": err_before, "candidates": cand, "choice": choice},
             metrics={"plotted_count": len(plotted)},
             render_data=RenderData(
                 mode="pixel_grid",
@@ -348,6 +357,11 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
                     "current": (x, y),
                     "start_point": (x0, y0),
                     "end_point": (x1, y1),
+                    "decision": err_before,
+                    "decision_kind": "err",
+                    "e2": e2,
+                    "lean": lean,
+                    "choice": choice,
                 }
             )
         ))
@@ -456,16 +470,19 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
         cand_E = (cx + x, cy + y)
         cand_SE = (cx + x, cy + y - 1)
 
+        p_before = p
         if p < 0:
             # Midpoint is inside circle, choose E (x+1, y)
             p_next = p + 2 * x + 1
             expl = f"p = {p} < 0: Midpoint is inside the circle boundary. Choose E: y remains {y}. p_next = p + 2x + 1 = {p_next}."
+            lean, choice = -1, "E"
             p = p_next
         else:
             # Midpoint is outside circle, choose SE (x+1, y-1)
             y -= 1
             p_next = p + 2 * x + 1 - 2 * y
             expl = f"p = {p} ≥ 0: Midpoint is outside or on circle boundary. Choose SE: y decrements to {y}. p_next = p + 2x + 1 - 2y = {p_next}."
+            lean, choice = 1, "SE"
             p = p_next
 
         sym_pts = get_symmetric_points(x, y)
@@ -478,7 +495,7 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
             title=f"Step x={x}, y={y} (p={p})",
             equation=f"Decision p = {p_next},  Selected (x={x}, y={y})",
             explanation=expl + f" Symmetrically replicated across all 8 octants ({len(sym_pts)} points).",
-            values={"x": x, "y": y, "decision_param": p, "octant_points": sym_pts},
+            values={"x": x, "y": y, "decision_param": p_before, "octant_points": sym_pts, "choice": choice},
             metrics={"plotted_count": len(plotted)},
             render_data=RenderData(
                 mode="pixel_grid",
@@ -488,6 +505,10 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
                     "candidates": [cand_E, cand_SE],
                     "current": (cx + x, cy + y),
                     "center": (cx, cy),
+                    "decision": p_before,
+                    "decision_kind": "p",
+                    "lean": lean,
+                    "choice": choice,
                 }
             )
         ))

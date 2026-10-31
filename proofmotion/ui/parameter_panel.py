@@ -15,7 +15,7 @@ Features:
 from typing import Dict, List, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QComboBox, QFrame, QScrollArea, QSizePolicy, QLayout,
+    QComboBox, QFrame, QScrollArea, QSizePolicy, QLayout, QSlider,
 )
 from PyQt5.QtGui import QRegExpValidator, QIntValidator
 from PyQt5.QtCore import Qt, pyqtSignal, QRegExp, QPoint, QRect, QSize
@@ -130,6 +130,13 @@ PAIRS = {
     ("cx", "cy"), ("cy", "cx"),
     ("rx", "ry"), ("ry", "rx"),
     ("low_threshold", "high_threshold"),
+    ("p0x", "p0y"), ("p0y", "p0x"),
+    ("p1x", "p1y"), ("p1y", "p1x"),
+    ("p2x", "p2y"), ("p2y", "p2x"),
+    ("p3x", "p3y"), ("p3y", "p3x"),
+    ("p4x", "p4y"), ("p4y", "p4x"),
+    ("t0x", "t0y"), ("t0y", "t0x"),
+    ("t1x", "t1y"), ("t1y", "t1x"),
 }
 
 TOPIC_PRESETS = {
@@ -289,12 +296,31 @@ TOPIC_PRESETS = {
         ("Bird's Eye Apex", {"rx": 70.0, "ry": 45.0, "rz": 0.0, "tx": 0.0, "ty": 0.0, "tz": 0.0, "sx": 1.0, "sy": 1.0, "sz": 1.0, "camera_dist": 8.0, "focal_dist": 4.5}),
         ("Elongated Spire", {"rx": 20.0, "ry": 35.0, "rz": 0.0, "tx": 0.0, "ty": -0.5, "tz": 0.0, "sx": 1.0, "sy": 2.0, "sz": 1.0, "camera_dist": 8.5, "focal_dist": 4.5}),
     ],
+    "curve_bezier": [
+        ("Classic S-curve", {"p0x": -5.0, "p0y": -2.0, "p1x": -1.5, "p1y": 4.0, "p2x": 1.5, "p2y": -4.0, "p3x": 5.0, "p3y": 2.0, "t": 0.35}),
+        ("Symmetric arch", {"p0x": -5.0, "p0y": -2.0, "p1x": -2.0, "p1y": 4.5, "p2x": 2.0, "p2y": 4.5, "p3x": 5.0, "p3y": -2.0, "t": 0.50}),
+        ("Almost linear", {"p0x": -5.0, "p0y": -1.0, "p1x": -1.5, "p1y": -0.2, "p2x": 1.5, "p2y": 0.2, "p3x": 5.0, "p3y": 1.0, "t": 0.40}),
+        ("Loop", {"p0x": -4.0, "p0y": 0.0, "p1x": 5.0, "p1y": 5.0, "p2x": 5.0, "p2y": -5.0, "p3x": -4.0, "p3y": 0.5, "t": 0.45}),
+    ],
+    "curve_bspline": [
+        ("Wave (clamped cubic)", {"p0x": -5.0, "p0y": -1.0, "p1x": -2.5, "p1y": 3.0, "p2x": 0.0, "p2y": -2.5, "p3x": 2.5, "p3y": 3.0, "p4x": 5.0, "p4y": -1.0, "degree": "3 (cubic)", "knot_style": "Clamped uniform", "u": 0.45}),
+        ("Quadratic", {"p0x": -5.0, "p0y": -1.0, "p1x": -2.5, "p1y": 3.0, "p2x": 0.0, "p2y": -2.5, "p3x": 2.5, "p3y": 3.0, "p4x": 5.0, "p4y": -1.0, "degree": "2 (quadratic)", "knot_style": "Clamped uniform", "u": 0.45}),
+        ("Uniform knots", {"p0x": -5.0, "p0y": -1.0, "p1x": -2.5, "p1y": 3.0, "p2x": 0.0, "p2y": -2.5, "p3x": 2.5, "p3y": 3.0, "p4x": 5.0, "p4y": -1.0, "degree": "3 (cubic)", "knot_style": "Uniform", "u": 0.50}),
+        ("Open C-shape", {"p0x": -4.5, "p0y": 3.0, "p1x": -4.5, "p1y": -2.5, "p2x": 0.0, "p2y": -3.0, "p3x": 4.5, "p3y": -2.5, "p4x": 4.5, "p4y": 3.0, "degree": "3 (cubic)", "knot_style": "Clamped uniform", "u": 0.40}),
+    ],
+    "curve_hermite": [
+        ("Gentle S", {"p0x": -4.5, "p0y": -1.5, "p1x": 4.5, "p1y": 1.5, "t0x": 3.5, "t0y": 5.0, "t1x": 3.5, "t1y": -5.0, "t": 0.35}),
+        ("Zero tangents", {"p0x": -4.5, "p0y": -1.0, "p1x": 4.5, "p1y": 1.0, "t0x": 0.0, "t0y": 0.0, "t1x": 0.0, "t1y": 0.0, "t": 0.50}),
+        ("Long overshoot", {"p0x": -4.0, "p0y": 0.0, "p1x": 4.0, "p1y": 0.0, "t0x": 8.0, "t0y": 7.0, "t1x": 8.0, "t1y": -7.0, "t": 0.40}),
+        ("Looping join", {"p0x": -3.5, "p0y": -2.0, "p1x": 3.5, "p1y": -2.0, "t0x": 0.0, "t0y": 9.0, "t1x": 0.0, "t1y": 9.0, "t": 0.45}),
+    ],
 }
 
 
 class ParameterPanel(QWidget):
     parametersApplied = pyqtSignal(dict)  # key -> value (float, int, str)
     sortingStyleRequested = pyqtSignal(str) # "balls", "cubes", "marbles", "bars"
+    curveTChanged = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -439,6 +465,15 @@ class ParameterPanel(QWidget):
             combo = self._inputs.get("polygon_shape")
             if isinstance(combo, QComboBox):
                 combo.activated.connect(lambda *_: self._on_apply_clicked())
+
+        # 5. Curve lesson now-card (Bézier, B-spline, Hermite)
+        if topic_key in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            walkthrough_section = self._build_curve_walkthrough_section()
+            self._params_layout.addWidget(walkthrough_section)
+            for combo_key in ("degree", "knot_style"):
+                combo = self._inputs.get(combo_key)
+                if isinstance(combo, QComboBox):
+                    combo.activated.connect(lambda *_: self._on_apply_clicked())
 
         self._hide_error()
         self._action_widget.show()
@@ -787,7 +822,10 @@ class ParameterPanel(QWidget):
         if widget and not isinstance(widget, QComboBox):
             widget.blockSignals(True)
             if isinstance(value, float):
-                widget.setText(f"{value:.1f}")
+                if abs(value - round(value)) < 1e-6:
+                    widget.setText(str(int(round(value))))
+                else:
+                    widget.setText(f"{value:.2f}".rstrip("0").rstrip("."))
             else:
                 widget.setText(str(value))
             widget.blockSignals(False)
@@ -1023,10 +1061,164 @@ class ParameterPanel(QWidget):
                 "background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; "
                 "font-size: 12.5px; padding: 8px 10px; border-radius: 8px;"
             )
+            if caption:
+                self._clip_dec_banner.setText(caption)
+                self._clip_dec_banner.setStyleSheet(style)
+                self._clip_dec_banner.show()
+
+    def _build_curve_walkthrough_section(self) -> QWidget:
+        """Now-card for Bézier, B-spline and Hermite lessons, with a live t/u slider."""
+        container = QWidget()
+        container.setObjectName("PresetContainer")
+        self._curve_walkthrough = container
+        v = QVBoxLayout(container)
+        v.setContentsMargins(12, 10, 12, 12)
+        v.setSpacing(8)
+
+        header_row = QHBoxLayout()
+        self._curve_card_title = QLabel("THIS STEP")
+        self._curve_card_title.setObjectName("PresetSectionTitle")
+        header_row.addWidget(self._curve_card_title)
+        header_row.addStretch(1)
+        self._curve_badge = QLabel("t")
+        self._curve_badge.setStyleSheet(
+            "background: #EDE9FE; color: #5B21B6; "
+            "font-weight: 600; font-size: 11px; padding: 2px 8px; border-radius: 8px;"
+        )
+        header_row.addWidget(self._curve_badge)
+        v.addLayout(header_row)
+
+        self._curve_hint = QLabel("Drag control points on the canvas. Play sweeps the parameter.")
+        self._curve_hint.setWordWrap(True)
+        self._curve_hint.setStyleSheet("color: #64748B; font-size: 12.5px;")
+        v.addWidget(self._curve_hint)
+
+        slider_row = QHBoxLayout()
+        self._curve_t_label = QLabel("t")
+        self._curve_t_label.setStyleSheet("font-family: monospace; font-size: 12px; color: #1E293B;")
+        self._curve_t_label.setFixedWidth(16)
+        slider_row.addWidget(self._curve_t_label)
+        self._curve_t_slider = QSlider(Qt.Horizontal)
+        self._curve_t_slider.setRange(0, 20)
+        self._curve_t_slider.setValue(7)
+        self._curve_t_slider.setCursor(Qt.PointingHandCursor)
+        self._curve_t_slider.valueChanged.connect(self._on_curve_t_slider)
+        slider_row.addWidget(self._curve_t_slider, stretch=1)
+        self._curve_t_value = QLabel("0.35")
+        self._curve_t_value.setStyleSheet(
+            "font-family: monospace; font-size: 12px; color: #5B21B6; min-width: 36px;"
+        )
+        slider_row.addWidget(self._curve_t_value)
+        v.addLayout(slider_row)
+        self._curve_slider_row = slider_row
+
+        self._curve_banner = QLabel("")
+        self._curve_banner.setWordWrap(True)
+        self._curve_banner.setStyleSheet(
+            "background: #F5F3FF; color: #5B21B6; border: 1px solid #DDD6FE; "
+            "font-size: 12.5px; padding: 8px 10px; border-radius: 8px;"
+        )
+        v.addWidget(self._curve_banner)
+
+        self._curve_knots = QLabel("")
+        self._curve_knots.setWordWrap(True)
+        self._curve_knots.setStyleSheet("font-family: monospace; font-size: 11px; color: #475569;")
+        self._curve_knots.hide()
+        v.addWidget(self._curve_knots)
+
+        self._curve_topic = ""
+        self._curve_lesson_tab = ""
+        return container
+
+    def _on_curve_t_slider(self, ticks: int):
+        value = ticks / 20.0
+        self._curve_t_value.setText(f"{value:.2f}")
+        self.curveTChanged.emit(value)
+
+    def set_curve_lesson_tab(self, topic_key: str, tab_key: str):
+        self._curve_topic = topic_key or ""
+        self._curve_lesson_tab = tab_key or ""
+        if not getattr(self, "_curve_walkthrough", None):
+            return
+        is_curve = topic_key in ("curve_bezier", "curve_bspline", "curve_hermite")
+        self._curve_walkthrough.setVisible(is_curve)
+        if not is_curve:
+            return
+
+        param_name = "u" if topic_key == "curve_bspline" else "t"
+        self._curve_t_label.setText(param_name)
+        show_slider = tab_key in ("casteljau", "math", "experiment")
+        if hasattr(self, "_curve_t_slider"):
+            self._curve_t_slider.setVisible(show_slider)
+            self._curve_t_label.setVisible(show_slider)
+            self._curve_t_value.setVisible(show_slider)
+
+        titles = {
+            "intro": "THE IDEA",
+            "math": "THE MATH",
+            "casteljau": "DE CASTELJAU & EXPERIMENT",
+            "experiment": "EXPERIMENT",
+        }
+        self._curve_card_title.setText(titles.get(tab_key, "THIS STEP"))
+
+        if tab_key == "intro":
+            self._curve_hint.setText("Read the construction, then open the next tab to manipulate it.")
+        elif tab_key == "math":
+            self._curve_hint.setText("The formula and the picture stay in lockstep. Drag handles anytime.")
+        elif tab_key == "casteljau":
+            self._curve_hint.setText("Drag handles on canvas or adjust t slider. Play steps through the lerp pyramid.")
+        else:
+            self._curve_hint.setText("Drag handles on the canvas. Play sweeps the parameter from 0 to 1.")
+
+        self._set_param_field_visible("t", topic_key != "curve_bspline")
+        self._set_param_field_visible("u", topic_key == "curve_bspline")
+        for key in ("degree", "knot_style"):
+            self._set_param_field_visible(key, topic_key == "curve_bspline")
+
+    def update_curve_walkthrough(self, step_values: dict):
+        if not getattr(self, "_curve_walkthrough", None):
+            return
+        t = step_values.get("t")
+        if t is None:
+            t = step_values.get("u")
+        if t is not None and hasattr(self, "_curve_t_slider"):
+            ticks = int(round(float(t) * 20))
+            self._curve_t_slider.blockSignals(True)
+            self._curve_t_slider.setValue(max(0, min(20, ticks)))
+            self._curve_t_slider.blockSignals(False)
+            self._curve_t_value.setText(f"{float(t):.2f}")
+
+        caption = step_values.get("caption") or ""
         if caption:
-            self._clip_dec_banner.setText(caption)
-            self._clip_dec_banner.setStyleSheet(style)
-            self._clip_dec_banner.show()
+            self._curve_hint.setText(str(caption))
+
+        pt = step_values.get("curve_point")
+        stage = step_values.get("stage", "")
+        if pt:
+            self._curve_banner.setText(f"C = ({pt[0]:.2f}, {pt[1]:.2f})")
+            self._curve_banner.show()
+        elif caption:
+            self._curve_banner.setText(str(caption))
+            self._curve_banner.show()
+        else:
+            self._curve_banner.hide()
+
+        badge = "Now"
+        if t is not None:
+            badge = f"t = {float(t):.2f}" if self._curve_topic != "curve_bspline" else f"u = {float(t):.2f}"
+        if stage.startswith("level"):
+            badge = stage.replace("level", "L")
+        elif stage == "experiment":
+            badge = badge
+        self._curve_badge.setText(badge)
+
+        knots = step_values.get("knots")
+        if knots:
+            body = ", ".join(f"{k:.2f}" for k in knots)
+            self._curve_knots.setText(f"U = [{body}]")
+            self._curve_knots.show()
+        else:
+            self._curve_knots.hide()
 
     @staticmethod
     def _format_default(value) -> str:
@@ -1176,6 +1368,7 @@ class ParameterPanel(QWidget):
         self._preset_section = None
         self._field_cols = {}
         self._clip_walkthrough = None
+        self._curve_walkthrough = None
         self._hide_error()
 
     def _clear_layout_recursively(self, layout):

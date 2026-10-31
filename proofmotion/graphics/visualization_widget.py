@@ -35,6 +35,7 @@ class VisualizationWidget(QWidget):
     viewChanged = pyqtSignal(float, float, float)  # zoom, pan_x, pan_y
     clippingEndpointDragged = pyqtSignal(str, float, float)  # target ("P1" or "P2"), x, y
     clippingRegionClicked = pyqtSignal(int, str)  # code, region_name
+    curveHandleDragged = pyqtSignal(str, float, float)  # handle id ("P0"/"T0"), x, y
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,6 +59,10 @@ class VisualizationWidget(QWidget):
         # Cohen-Sutherland endpoint dragging & hover
         self._drag_endpoint_target: Optional[str] = None
         self._hovered_endpoint: Optional[str] = None
+
+        # Curve control-point / tangent-handle dragging
+        self._drag_curve_handle: Optional[str] = None
+        self._hovered_curve_handle: Optional[str] = None
 
         # Animated Sorting Playground Engine
         self._sorting_renderer = SortingPlaygroundRenderer()
@@ -121,14 +126,15 @@ class VisualizationWidget(QWidget):
         rd = self._render_data
         is_sorting = bool(rd and (rd.mode == "bars" or getattr(rd, "sort_event", None) is not None))
         is_clipping = bool(rd and rd.mode == "clipping" and rd.clipping_data)
-        is_geometry = bool(rd and rd.mode in ("geometry", "") and not is_clipping and not is_sorting)
+        is_curves = bool(rd and rd.mode == "curves" and getattr(rd, "curve_data", None))
+        is_geometry = bool(rd and rd.mode in ("geometry", "") and not is_clipping and not is_sorting and not is_curves)
         is_raster = bool(rd and rd.mode == "pixel_grid")
         is_search = bool(rd and getattr(rd, "search_data", None) is not None)
         reduced = bool(self._sorting_renderer.reduced_motion)
         speed = max(0.25, getattr(self, "_speed_mult", 1.0))
 
         has_anim = False
-        if reduced:
+        if reduced or self._drag_curve_handle or self._drag_endpoint_target:
             has_anim = False
         elif is_sorting:
             has_anim = True
@@ -143,6 +149,15 @@ class VisualizationWidget(QWidget):
             anim_type = str(rd.clipping_data.get("anim", {}).get("type", ""))
             base = 1100 if anim_type in ("edge_travel", "pass_morph", "endpoint_move") else 800
             self._anim_duration = int(base / speed)
+        elif is_curves:
+            anim = (rd.curve_data or {}).get("anim") or {}
+            anim_type = str(anim.get("type", ""))
+            if anim_type in ("lerp_level", "lerp_pair", "reveal"):
+                has_anim = True
+                self._anim_duration = int(900 / speed)
+            elif anim_type == "sweep":
+                has_anim = True
+                self._anim_duration = int(260 / speed)
         elif is_search:
             has_anim = True
             self._anim_duration = int(750 / speed)
@@ -255,6 +270,12 @@ class VisualizationWidget(QWidget):
     # ------------------------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._render_data and self._render_data.mode == "curves" and getattr(self._render_data, "curve_data", None):
+                handle = self._hit_curve_handle(float(event.pos().x()), float(event.pos().y()))
+                if handle:
+                    self._drag_curve_handle = handle
+                    self.setCursor(Qt.ClosedHandCursor)
+                    return
             if self._render_data and self._render_data.mode == "clipping" and self._render_data.clipping_data:
                 cd = self._render_data.clipping_data
                 view_tab = cd.get("view_tab", "clip_line")
@@ -294,10 +315,24 @@ class VisualizationWidget(QWidget):
             self.setCursor(Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, event):
+        if self._drag_curve_handle:
+            wx, wy = self._curve_screen_to_world(float(event.pos().x()), float(event.pos().y()))
+            self.curveHandleDragged.emit(self._drag_curve_handle, round(wx, 2), round(wy, 2))
+            return
+
         if self._drag_endpoint_target:
             wx, wy = self._clipping_screen_to_world(float(event.pos().x()), float(event.pos().y()))
             self.clippingEndpointDragged.emit(self._drag_endpoint_target, round(wx, 1), round(wy, 1))
             return
+
+        if self._render_data and self._render_data.mode == "curves" and getattr(self._render_data, "curve_data", None) and not self._dragging:
+            handle = self._hit_curve_handle(float(event.pos().x()), float(event.pos().y()))
+            if handle != self._hovered_curve_handle:
+                self._hovered_curve_handle = handle
+                self.setCursor(Qt.PointingHandCursor if handle else Qt.ArrowCursor)
+                self.update()
+            if handle:
+                return
 
         # Check hover over endpoints in clipping mode
         if self._render_data and self._render_data.mode == "clipping" and self._render_data.clipping_data and not self._dragging:
@@ -332,9 +367,15 @@ class VisualizationWidget(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._drag_curve_handle:
+                self._drag_curve_handle = None
+                self.setCursor(Qt.PointingHandCursor if self._hovered_curve_handle else Qt.ArrowCursor)
+                self.update()
+                return
             if self._drag_endpoint_target:
                 self._drag_endpoint_target = None
                 self.setCursor(Qt.PointingHandCursor if self._hovered_endpoint else Qt.ArrowCursor)
+                self.update()
                 return
             self._dragging = False
             self.setCursor(Qt.ArrowCursor)
@@ -383,8 +424,8 @@ class VisualizationWidget(QWidget):
             self._draw_pixel_grid(painter, rd.pixel_grid)
         elif mode == "clipping" and rd.clipping_data is not None:
             self._draw_clipping(painter, rd.clipping_data)
-        elif mode == "image" and rd.image_data is not None:
-            self._draw_image(painter, rd.image_data)
+        elif mode == "curves" and getattr(rd, "curve_data", None) is not None:
+            self._draw_curves(painter, rd.curve_data)
         else:
             self._draw_geometry(painter, rd)
 
@@ -407,6 +448,7 @@ class VisualizationWidget(QWidget):
 
         # Keep the zoom badge off clipping captions and algorithms (sorting / searching)
         is_clipping = bool(self._render_data and self._render_data.mode == "clipping")
+        is_curves = bool(self._render_data and self._render_data.mode == "curves")
         is_algorithms = bool(
             getattr(self, "_theorem_key", "") in (
                 "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort", "linear_search", "binary_search"
@@ -417,7 +459,7 @@ class VisualizationWidget(QWidget):
                 or getattr(self._render_data, "sort_event", None) is not None
             ))
         )
-        if not is_clipping and not is_algorithms:
+        if not is_clipping and not is_curves and not is_algorithms:
             painter.drawText(
                 QRectF(16, self.height() - 26, self.width() - 32, 18),
                 Qt.AlignRight | Qt.AlignVCenter,
@@ -1119,12 +1161,19 @@ class VisualizationWidget(QWidget):
                 painter.setPen(cand_pen)
                 painter.drawRect(QRectF(sx + 2, sy + 2, cell_size - 4, cell_size - 4))
 
-        # 4. Current Step Pixel (pulse/focus border)
+        # 4. Current Step Pixel (pulse/focus border + ignition glow)
         if current_px:
             cgx, cgy = current_px[0], current_px[1]
             if 0 <= cgx < grid_w and 0 <= cgy < grid_h:
                 sx, sy = grid_to_screen(cgx, cgy)
                 pulse = 0.55 + 0.45 * math.sin(t * math.pi)
+                if pg.get("decision") is not None:
+                    cxp = sx + cell_size / 2.0
+                    cyp = sy + cell_size / 2.0
+                    glow = cell_size * (0.85 + 0.35 * pulse)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QBrush(QColor(253, 224, 71, int(40 + 50 * pulse))))
+                    painter.drawEllipse(QPointF(cxp, cyp), glow, glow)
                 painter.setBrush(QBrush(QColor(91, 141, 239, int(50 + 50 * pulse))))
                 painter.setPen(QPen(QColor(COLORS["accent_gold"]), 2.5))
                 painter.drawRect(QRectF(sx + 1, sy + 1, cell_size - 2, cell_size - 2))
@@ -1215,7 +1264,51 @@ class VisualizationWidget(QWidget):
             painter.setPen(QPen(QColor("#475569")))
             painter.drawText(leg_x + 28, iy + 4, text)
 
+        if pg.get("decision") is not None:
+            self._draw_decision_pendulum(painter, pg, 14, h - 118)
+
         painter.restore()
+
+    def _draw_decision_pendulum(self, painter: QPainter, pg: dict, x: float, y: float):
+        """Hanging needle that leans with Bresenham err / midpoint p."""
+        box = QRectF(x, y, 168, 104)
+        painter.setPen(QPen(QColor("#DDD6FE"), 1.2))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 236)))
+        painter.drawRoundedRect(box, 10, 10)
+        kind = pg.get("decision_kind") or "err"
+        decision = float(pg.get("decision") or 0.0)
+        lean = int(pg.get("lean") or 0)
+        choice = str(pg.get("choice") or "")
+        title = "ERROR PENDULUM" if kind == "err" else "MIDPOINT p"
+        painter.setFont(get_ui_font(11, weight=700))
+        painter.setPen(QPen(QColor("#5B21B6")))
+        painter.drawText(QRectF(box.left() + 12, box.top() + 8, 144, 16), Qt.AlignLeft, title)
+
+        pivot = QPointF(box.center().x(), box.top() + 28)
+        angle = lean * 0.42 + max(-0.7, min(0.7, decision / 18.0)) * 0.55
+        length = 48.0
+        tip = QPointF(pivot.x() + math.sin(angle) * length, pivot.y() + math.cos(angle) * length)
+        painter.setPen(QPen(QColor("#64748B"), 1.2))
+        painter.drawLine(QPointF(pivot.x() - 36, pivot.y()), QPointF(pivot.x() + 36, pivot.y()))
+        painter.setPen(QPen(QColor("#0F172A"), 2.4, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(pivot, tip)
+        painter.setBrush(QBrush(QColor("#F59E0B")))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(tip, 6.0, 6.0)
+        painter.setBrush(QBrush(QColor("#5B21B6")))
+        painter.drawEllipse(pivot, 3.2, 3.2)
+
+        left = "X" if kind == "err" else "E"
+        right = "Y" if kind == "err" else "SE"
+        painter.setFont(get_mono_font(10, weight=600))
+        painter.setPen(QPen(QColor("#64748B")))
+        painter.drawText(QRectF(box.left() + 10, box.bottom() - 22, 40, 16), Qt.AlignLeft, left)
+        painter.drawText(QRectF(box.right() - 50, box.bottom() - 22, 40, 16), Qt.AlignRight, right)
+        painter.setPen(QPen(QColor("#0F172A")))
+        label = f"{kind}={decision:g}"
+        if choice:
+            label += f" → {choice}"
+        painter.drawText(QRectF(box.left() + 12, box.bottom() - 22, 144, 16), Qt.AlignCenter, label)
 
     # ------------------------------------------------------------------
     # Cohen-Sutherland Clipping Mode
@@ -2115,92 +2208,567 @@ class VisualizationWidget(QWidget):
         painter.restore()
 
     # ------------------------------------------------------------------
-    # Image Processing Mode (OpenCV Before / After)
+    # Curves & Geometric Modelling
     # ------------------------------------------------------------------
-    def _draw_image(self, painter: QPainter, idata: dict):
-        w, h = self.width(), self.height()
-        orig_img = idata.get("original")  # QImage or numpy
-        proc_img = idata.get("processed") # QImage or numpy
-        title_orig = idata.get("title_orig", "Original Image (Input)")
-        title_proc = idata.get("title_proc", "Processed Result")
-        orig_dims = idata.get("orig_dims", "")
-        proc_dims = idata.get("proc_dims", "")
+    _CURVE_LEVEL_COLORS = ["#64748B", "#0D9488", "#D97706", "#6C5CE7", "#DB2777"]
+    _CURVE_POINT_COLORS = ["#6C5CE7", "#0D9488", "#D97706", "#DB2777", "#2563EB", "#CA8A04"]
+
+    def _curve_layout(self, cd: dict) -> Tuple[float, float, float, float]:
+        """Return (top, bottom, plot_h, caption_h) paddings in pixels."""
+        h = float(self.height())
+        has_plot = bool(cd.get("basis_plot"))
+        caption = str(cd.get("caption") or "")
+        plot_h = min(132.0, max(96.0, h * 0.26)) if has_plot else 0.0
+        caption_h = 44.0 if caption else 18.0
+        return 14.0, caption_h + plot_h + 8.0, plot_h, caption_h
+
+    def _get_curve_transform(self) -> Tuple[float, float, float]:
+        w, h = float(self.width()), float(self.height())
+        cd = {}
+        if self._render_data and getattr(self._render_data, "curve_data", None):
+            cd = self._render_data.curve_data or {}
+        bounds = None
+        if self._render_data and self._render_data.view_bounds:
+            bounds = self._render_data.view_bounds
+        if not bounds:
+            pts = list(cd.get("control_points") or [])
+            for key in ("t0_tip", "t1_tip"):
+                if cd.get(key):
+                    pts.append(cd[key])
+            if pts:
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                pad = 1.8
+                bounds = (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)
+            else:
+                bounds = (-7.0, -5.0, 7.0, 5.0)
+        xmin, ymin, xmax, ymax = bounds
+        span_x = max(6.0, xmax - xmin)
+        span_y = max(4.5, ymax - ymin)
+        top, bottom, _, _ = self._curve_layout(cd)
+        usable_w = max(80.0, w - 28.0)
+        usable_h = max(80.0, h - top - bottom)
+        scale = min(usable_w / span_x, usable_h / span_y) * self._zoom
+        mid_x = (xmin + xmax) / 2.0
+        mid_y = (ymin + ymax) / 2.0
+        cx = w / 2.0 + self._pan[0] - mid_x * scale
+        cy = top + usable_h / 2.0 + self._pan[1] + mid_y * scale
+        return cx, cy, scale
+
+    def _curve_world_to_screen(self, x: float, y: float) -> Tuple[float, float]:
+        cx, cy, scale = self._get_curve_transform()
+        return cx + x * scale, cy - y * scale
+
+    def _curve_screen_to_world(self, sx: float, sy: float) -> Tuple[float, float]:
+        cx, cy, scale = self._get_curve_transform()
+        if abs(scale) < 1e-9:
+            return 0.0, 0.0
+        return (sx - cx) / scale, (cy - sy) / scale
+
+    def _curve_handles(self, cd: dict) -> List[Tuple[str, float, float]]:
+        if not cd.get("draggable", True):
+            return []
+        handles = []
+        pts = cd.get("control_points") or []
+        labels = cd.get("labels") or [f"P{i}" for i in range(len(pts))]
+        for i, p in enumerate(pts):
+            handles.append((labels[i] if i < len(labels) else f"P{i}", float(p[0]), float(p[1])))
+        if cd.get("kind") == "hermite":
+            if cd.get("t0_tip"):
+                handles.append(("T0", float(cd["t0_tip"][0]), float(cd["t0_tip"][1])))
+            if cd.get("t1_tip"):
+                handles.append(("T1", float(cd["t1_tip"][0]), float(cd["t1_tip"][1])))
+        return handles
+
+    def _hit_curve_handle(self, mx: float, my: float) -> Optional[str]:
+        cd = getattr(self._render_data, "curve_data", None) or {}
+        radius2 = 16.0 ** 2
+        for hid, wx, wy in self._curve_handles(cd):
+            sx, sy = self._curve_world_to_screen(wx, wy)
+            if (mx - sx) ** 2 + (my - sy) ** 2 <= radius2:
+                return hid
+        return None
+
+    def _draw_curves(self, painter: QPainter, cd: dict):
+        w, h = float(self.width()), float(self.height())
+        top, bottom, plot_h, caption_h = self._curve_layout(cd)
+        self._draw_curve_grid(painter, cd)
+
+        kind = cd.get("kind", "bezier")
+        stage = str(cd.get("stage", ""))
+        if kind == "lerp_1d" or stage.startswith("stage2") or stage.startswith("lerp"):
+            self._draw_linear_interpolation(painter, cd)
+            return
+
+        t = float(cd.get("t", 0.35))
+        ease = self._clip_ease()
+        anim = cd.get("anim") or {}
+        reveal = cd.get("reveal_level")
+        pyramid = cd.get("pyramid") or []
+        if reveal is None:
+            reveal = max(0, len(pyramid) - 1)
+
+        if cd.get("show_polygon", True) and kind != "hermite":
+            self._draw_curve_polygon(painter, cd.get("control_points") or [], "#94A3B8", 1.6, dashed=True)
+
+        if kind == "hermite" and cd.get("show_equiv_bezier"):
+            self._draw_curve_polygon(painter, cd.get("equiv_bezier") or [], "#C4B5FD", 1.3, dashed=True)
+
+        if cd.get("show_curve", True):
+            samples = cd.get("curve_samples") or []
+            if samples:
+                faint = QColor("#6C5CE7")
+                faint.setAlpha(70)
+                self._draw_curve_polyline(painter, samples, faint, 2.4)
+            traced = cd.get("traced_samples") or []
+            if len(traced) >= 2:
+                self._draw_curve_polyline(painter, traced, QColor("#4C1D95"), 3.2)
+
+        if kind == "bezier" and pyramid:
+            self._draw_de_casteljau(painter, pyramid, reveal, t, anim, ease)
+
+        if kind == "hermite":
+            self._draw_hermite_tangents(painter, cd)
+
+        if kind != "hermite":
+            self._draw_curve_control_points(painter, cd)
+        else:
+            self._draw_hermite_endpoints(painter, cd)
+
+        cpt = cd.get("curve_point")
+        if cpt and cd.get("show_curve", True):
+            self._draw_curve_eval_point(painter, cpt, t)
+
+        caption = str(cd.get("caption") or "")
+        if caption:
+            cap_bottom = h - (plot_h + 10.0 if plot_h else 10.0)
+            self._draw_curve_caption(painter, caption, w, cap_bottom)
+
+        if cd.get("basis_plot"):
+            self._draw_basis_plot(painter, cd["basis_plot"], w, h, plot_h)
+
+    def _draw_linear_interpolation(self, painter: QPainter, cd: dict):
+        w, h = float(self.width()), float(self.height())
+        pt_a = cd.get("pt_a") or (cd.get("control_points") or [(-4.0, -1.0), (4.0, 2.0)])[0]
+        pt_b = cd.get("pt_b") or (cd.get("control_points") or [(-4.0, -1.0), (4.0, 2.0)])[-1]
+        t = float(cd.get("t", 0.35))
+        p_t = cd.get("curve_point") or (pt_a[0] + (pt_b[0] - pt_a[0]) * t, pt_a[1] + (pt_b[1] - pt_a[1]) * t)
+
+        s_a = QPointF(*self._curve_world_to_screen(pt_a[0], pt_a[1]))
+        s_b = QPointF(*self._curve_world_to_screen(pt_b[0], pt_b[1]))
+        s_p = QPointF(*self._curve_world_to_screen(p_t[0], p_t[1]))
 
         painter.save()
-        margin = 16
-        box_w = (w - 3 * margin) / 2.0
-        box_h = h - 2 * margin - 10
 
-        def render_qimage(img, target_rect, title, dims_str, is_processed=False):
-            # Card Container
-            painter.setPen(QPen(QColor(COLORS["border"]), 1.2))
-            painter.setBrush(QBrush(QColor(20, 26, 34)))
-            painter.drawRoundedRect(target_rect, 8, 8)
+        # 1. Base segment A -> B (subtle dashed line)
+        pen_base = QPen(QColor("#94A3B8"), 2.0, Qt.DashLine, Qt.RoundCap)
+        pen_base.setDashPattern([6, 4])
+        painter.setPen(pen_base)
+        painter.drawLine(s_a, s_b)
 
-            # Card Header Bar
-            header_rect = QRectF(target_rect.left(), target_rect.top(), target_rect.width(), 36)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(QColor(26, 34, 46)))
-            painter.drawRoundedRect(header_rect, 8, 8)
-            # Flatten bottom corners of header
-            painter.drawRect(QRectF(target_rect.left(), target_rect.top() + 20, target_rect.width(), 16))
+        # 2. Active traveled path A -> P(t) (vivid purple line with rounded caps)
+        if t > 0.001:
+            pen_traveled = QPen(QColor("#6C5CE7"), 4.0, Qt.SolidLine, Qt.RoundCap)
+            painter.setPen(pen_traveled)
+            painter.drawLine(s_a, s_p)
 
-            # Header border line
-            painter.setPen(QPen(QColor(COLORS["border"]), 1))
-            painter.drawLine(QPointF(target_rect.left(), target_rect.top() + 36), QPointF(target_rect.right(), target_rect.top() + 36))
+        # 3. Remaining path P(t) -> B (teal dashed line)
+        if t < 0.999:
+            pen_rem = QPen(QColor("#0D9488"), 2.4, Qt.DashLine, Qt.RoundCap)
+            pen_rem.setDashPattern([4, 3])
+            painter.setPen(pen_rem)
+            painter.drawLine(s_p, s_b)
 
-            # Title
-            painter.setFont(QFont("Cascadia Mono", 10, QFont.Bold))
-            painter.setPen(QPen(QColor(COLORS["accent_teal"] if is_processed else COLORS["accent_gold"])))
-            painter.drawText(
-                QRectF(target_rect.left() + 14, target_rect.top() + 4, target_rect.width() - 28, 28),
-                Qt.AlignLeft | Qt.AlignVCenter,
-                title
+        # 4. Midpoint tick at t = 0.5
+        mid_world = ((pt_a[0] + pt_b[0]) * 0.5, (pt_a[1] + pt_b[1]) * 0.5)
+        s_mid = QPointF(*self._curve_world_to_screen(mid_world[0], mid_world[1]))
+        dx = s_b.x() - s_a.x()
+        dy = s_b.y() - s_a.y()
+        length = math.hypot(dx, dy)
+        if length > 1e-4:
+            nx = -dy / length
+            ny = dx / length
+            painter.setPen(QPen(QColor("#94A3B8"), 1.8))
+            painter.drawLine(QPointF(s_mid.x() - nx * 8, s_mid.y() - ny * 8),
+                             QPointF(s_mid.x() + nx * 8, s_mid.y() + ny * 8))
+            painter.setFont(get_mono_font(10, weight=600))
+            painter.setPen(QPen(QColor("#64748B")))
+            painter.drawText(QRectF(s_mid.x() + nx * 14 - 45, s_mid.y() + ny * 14 - 10, 90, 20),
+                             Qt.AlignCenter, "t = 0.5")
+
+        # 5. Formula calculation card floating at top-left
+        card_w, card_h = 330.0, 78.0
+        card_x, card_y = 18.0, 18.0
+        card_rect = QRectF(card_x, card_y, card_w, card_h)
+        painter.setPen(QPen(QColor("#DDD6FE"), 1.2))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 235)))
+        painter.drawRoundedRect(card_rect, 10, 10)
+
+        painter.setFont(get_ui_font(10, weight=700))
+        painter.setPen(QPen(QColor("#6C5CE7")))
+        painter.drawText(QRectF(card_x + 12, card_y + 8, card_w - 24, 16),
+                         Qt.AlignLeft, "LINEAR INTERPOLATION (LERP)")
+
+        painter.setFont(get_mono_font(11, weight=600))
+        painter.setPen(QPen(QColor("#1E293B")))
+        painter.drawText(QRectF(card_x + 12, card_y + 28, card_w - 24, 20),
+                         Qt.AlignLeft, "P(t) = (1 − t)·A + t·B")
+
+        painter.setFont(get_mono_font(10, weight=500))
+        painter.setPen(QPen(QColor("#475569")))
+        one_minus_t = 1.0 - t
+        calc_str = f"= {one_minus_t:.2f}·({pt_a[0]:.1f}, {pt_a[1]:.1f}) + {t:.2f}·({pt_b[0]:.1f}, {pt_b[1]:.1f}) = ({p_t[0]:.2f}, {p_t[1]:.2f})"
+        painter.drawText(QRectF(card_x + 12, card_y + 50, card_w - 24, 18),
+                         Qt.AlignLeft, calc_str)
+
+        # 6. Endpoints A and B (Draggable handles)
+        endpoints = [
+            ("A", pt_a, s_a, QColor("#2563EB"), "t = 0"),
+            ("B", pt_b, s_b, QColor("#E11D48"), "t = 1"),
+        ]
+        for name, pt, s_pt, col, t_lbl in endpoints:
+            is_active = name in (self._hovered_curve_handle, self._drag_curve_handle)
+            rad = 9.5 if is_active else 8.0
+            if is_active:
+                halo = QColor(col)
+                halo.setAlpha(60)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(halo))
+                painter.drawEllipse(s_pt, rad + 8, rad + 8)
+            painter.setBrush(QBrush(col))
+            painter.setPen(QPen(QColor("#FFFFFF"), 2.2))
+            painter.drawEllipse(s_pt, rad, rad)
+
+            painter.setFont(get_ui_font(11, weight=700))
+            painter.setPen(QPen(col))
+            painter.drawText(QRectF(s_pt.x() - 40, s_pt.y() - 32, 80, 16), Qt.AlignCenter, f"{name} [{t_lbl}]")
+            painter.setFont(get_mono_font(9, weight=500))
+            painter.setPen(QPen(QColor("#64748B")))
+            painter.drawText(QRectF(s_pt.x() - 50, s_pt.y() + 12, 100, 14), Qt.AlignCenter, f"({pt[0]:.1f}, {pt[1]:.1f})")
+
+        # 7. Interpolated Point P(t) with glowing halo and badge
+        p_glow = QColor("#6C5CE7")
+        p_glow.setAlpha(55)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(p_glow))
+        painter.drawEllipse(s_p, 16, 16)
+        painter.setBrush(QBrush(QColor("#FFE57B")))
+        painter.setPen(QPen(QColor("#6C5CE7"), 2.4))
+        painter.drawEllipse(s_p, 7.5, 7.5)
+
+        badge_w, badge_h = 136.0, 34.0
+        badge_x = s_p.x() - badge_w / 2.0
+        badge_y = s_p.y() - 48.0
+        badge_x = max(10.0, min(w - badge_w - 10.0, badge_x))
+        badge_y = max(10.0, min(h - badge_h - 10.0, badge_y))
+        b_rect = QRectF(badge_x, badge_y, badge_w, badge_h)
+        painter.setPen(QPen(QColor("#6C5CE7"), 1.2))
+        painter.setBrush(QBrush(QColor(245, 243, 255, 245)))
+        painter.drawRoundedRect(b_rect, 6, 6)
+
+        painter.setFont(get_mono_font(10, weight=700))
+        painter.setPen(QPen(QColor("#4C1D95")))
+        painter.drawText(QRectF(badge_x + 4, badge_y + 4, badge_w - 8, 14),
+                         Qt.AlignCenter, f"P({t:.2f}) = ({p_t[0]:.2f}, {p_t[1]:.2f})")
+        painter.setFont(get_mono_font(9, weight=500))
+        painter.setPen(QPen(QColor("#7C3AED")))
+        painter.drawText(QRectF(badge_x + 4, badge_y + 18, badge_w - 8, 12),
+                         Qt.AlignCenter, f"{one_minus_t * 100:.0f}% A + {t * 100:.0f}% B")
+
+        # 8. Bottom caption
+        caption = str(cd.get("caption") or "")
+        if caption:
+            self._draw_curve_caption(painter, caption, w, h - 16.0)
+
+        painter.restore()
+
+    def _draw_curve_grid(self, painter: QPainter, cd: dict):
+        if not self._show_grid:
+            return
+        painter.save()
+        w, h = float(self.width()), float(self.height())
+        cx, cy, scale = self._get_curve_transform()
+        if scale < 1e-6:
+            painter.restore()
+            return
+        origin_x, origin_y = cx, cy
+        lo_x = int(math.floor((-origin_x) / scale)) - 1
+        hi_x = int(math.ceil((w - origin_x) / scale)) + 1
+        lo_y = int(math.floor((origin_y - h) / scale)) - 1
+        hi_y = int(math.ceil(origin_y / scale)) + 1
+        painter.setPen(QPen(QColor(COLORS["grid_line"]), 1))
+        for x in range(lo_x, hi_x + 1):
+            sx = origin_x + x * scale
+            painter.drawLine(QPointF(sx, 0), QPointF(sx, h))
+        for y in range(lo_y, hi_y + 1):
+            sy = origin_y - y * scale
+            painter.drawLine(QPointF(0, sy), QPointF(w, sy))
+        painter.setPen(QPen(QColor(COLORS["axis_line"]), 1.4))
+        painter.drawLine(QPointF(0, origin_y), QPointF(w, origin_y))
+        painter.drawLine(QPointF(origin_x, 0), QPointF(origin_x, h))
+        painter.restore()
+
+    def _draw_curve_polyline(self, painter: QPainter, samples, color: QColor, width: float):
+        if len(samples) < 2:
+            return
+        painter.save()
+        path = QPainterPath()
+        sx, sy = self._curve_world_to_screen(samples[0][0], samples[0][1])
+        path.moveTo(sx, sy)
+        for p in samples[1:]:
+            sx, sy = self._curve_world_to_screen(p[0], p[1])
+            path.lineTo(sx, sy)
+        painter.setPen(QPen(color, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(path)
+        painter.restore()
+
+    def _draw_curve_polygon(self, painter: QPainter, pts, color: str, width: float, dashed: bool = False):
+        if len(pts) < 2:
+            return
+        painter.save()
+        pen = QPen(QColor(color), width, Qt.DashLine if dashed else Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        if dashed:
+            pen.setDashPattern([5, 4])
+        painter.setPen(pen)
+        for a, b in zip(pts, pts[1:]):
+            s1 = QPointF(*self._curve_world_to_screen(a[0], a[1]))
+            s2 = QPointF(*self._curve_world_to_screen(b[0], b[1]))
+            painter.drawLine(s1, s2)
+        painter.restore()
+
+    def _draw_de_casteljau(self, painter: QPainter, pyramid, reveal: int, t: float, anim: dict, ease: float):
+        anim_type = str(anim.get("type", ""))
+        anim_level = anim.get("level")
+        anim_pair = anim.get("pair")
+
+        def level_points(r: int) -> List[Tuple[float, float]]:
+            if r <= 0:
+                return [tuple(p) for p in pyramid[0]]
+            parent = pyramid[r - 1]
+            child = pyramid[r]
+            pts = []
+            for i, pt in enumerate(child):
+                u = 1.0
+                if r <= reveal:
+                    if anim_type == "lerp_level" and r == reveal:
+                        u = ease
+                    elif anim_type == "lerp_pair" and r == reveal and i == anim_pair:
+                        u = ease
+                    elif anim_type == "reveal" and r == reveal:
+                        u = ease
+                px = parent[i][0] + (pt[0] - parent[i][0]) * u
+                py = parent[i][1] + (pt[1] - parent[i][1]) * u
+                pts.append((px, py))
+            return pts
+
+        painter.save()
+        max_level = min(reveal, len(pyramid) - 1)
+        for r in range(1, max_level + 1):
+            pts = level_points(r)
+            color = QColor(self._CURVE_LEVEL_COLORS[r % len(self._CURVE_LEVEL_COLORS)])
+            if len(pts) >= 2:
+                pen = QPen(color, 2.0 if r < max_level else 2.4, Qt.SolidLine, Qt.RoundCap)
+                painter.setPen(pen)
+                for a, b in zip(pts, pts[1:]):
+                    painter.drawLine(QPointF(*self._curve_world_to_screen(a[0], a[1])),
+                                     QPointF(*self._curve_world_to_screen(b[0], b[1])))
+            for i, p in enumerate(pts):
+                sx, sy = self._curve_world_to_screen(p[0], p[1])
+                painter.setBrush(QBrush(color))
+                painter.setPen(QPen(QColor("#FFFFFF"), 1.4))
+                rad = 5.0 if r < max_level else 6.2
+                painter.drawEllipse(QPointF(sx, sy), rad, rad)
+                if max_level <= 3:
+                    painter.setFont(get_mono_font(10, weight=600))
+                    painter.setPen(QPen(color))
+                    names = {1: "Q", 2: "R", 3: "S"}
+                    label = f"{names.get(r, 'L')}{i}" if r < len(pyramid) - 1 or len(pts) > 1 else "C(t)"
+                    painter.drawText(QRectF(sx + 7, sy - 14, 36, 16), Qt.AlignLeft | Qt.AlignVCenter, label)
+        painter.restore()
+
+    def _draw_curve_control_points(self, painter: QPainter, cd: dict):
+        pts = cd.get("control_points") or []
+        labels = cd.get("labels") or [f"P{i}" for i in range(len(pts))]
+        highlight = cd.get("highlight_index")
+        hi_range = cd.get("highlight_range")
+        painter.save()
+        for i, p in enumerate(pts):
+            sx, sy = self._curve_world_to_screen(p[0], p[1])
+            hid = labels[i] if i < len(labels) else f"P{i}"
+            color = QColor(self._CURVE_POINT_COLORS[i % len(self._CURVE_POINT_COLORS)])
+            active = (
+                hid == self._hovered_curve_handle
+                or hid == self._drag_curve_handle
+                or highlight == i
+                or (hi_range and hi_range[0] <= i <= hi_range[1])
             )
+            rad = 8.5 if active else 7.0
+            if active:
+                halo = QColor(color)
+                halo.setAlpha(55)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(halo))
+                painter.drawEllipse(QPointF(sx, sy), rad + 6, rad + 6)
+            painter.setBrush(QBrush(color))
+            painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
+            painter.drawEllipse(QPointF(sx, sy), rad, rad)
+            painter.setFont(get_ui_font(12, weight=700))
+            painter.setPen(QPen(color))
+            painter.drawText(QRectF(sx - 18, sy - 26, 36, 16), Qt.AlignCenter, hid)
+        painter.restore()
 
-            # Dimensions badge in header right
-            if dims_str:
-                painter.setFont(QFont("Cascadia Mono", 8))
-                painter.setPen(QPen(QColor(COLORS["text_muted"])))
-                painter.drawText(
-                    QRectF(target_rect.left() + 14, target_rect.top() + 4, target_rect.width() - 28, 28),
-                    Qt.AlignRight | Qt.AlignVCenter,
-                    dims_str
-                )
+    def _draw_hermite_endpoints(self, painter: QPainter, cd: dict):
+        pts = cd.get("control_points") or []
+        labels = cd.get("labels") or ["P0", "P1"]
+        painter.save()
+        for i, p in enumerate(pts):
+            sx, sy = self._curve_world_to_screen(p[0], p[1])
+            hid = labels[i] if i < len(labels) else f"P{i}"
+            color = QColor("#6C5CE7" if i == 0 else "#0D9488")
+            active = hid in (self._hovered_curve_handle, self._drag_curve_handle)
+            rad = 8.5 if active else 7.2
+            painter.setBrush(QBrush(color))
+            painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
+            painter.drawEllipse(QPointF(sx, sy), rad, rad)
+            painter.setFont(get_ui_font(12, weight=700))
+            painter.setPen(QPen(color))
+            painter.drawText(QRectF(sx - 18, sy - 26, 36, 16), Qt.AlignCenter, hid)
+        painter.restore()
 
-            # Image display area
-            img_area = QRectF(
-                target_rect.left() + 12,
-                target_rect.top() + 46,
-                target_rect.width() - 24,
-                target_rect.height() - 56
-            )
+    def _draw_hermite_tangents(self, painter: QPainter, cd: dict):
+        p0 = cd.get("p0") or (cd.get("control_points") or [(0, 0)])[0]
+        p1 = cd.get("p1") or (cd.get("control_points") or [(0, 0), (1, 0)])[-1]
+        t0_tip = cd.get("t0_tip")
+        t1_tip = cd.get("t1_tip")
+        if t0_tip:
+            self._draw_curve_arrow(painter, p0, t0_tip, QColor("#D97706"), "T0",
+                                  "T0" in (self._hovered_curve_handle, self._drag_curve_handle))
+        if t1_tip:
+            self._draw_curve_arrow(painter, p1, t1_tip, QColor("#DB2777"), "T1",
+                                  "T1" in (self._hovered_curve_handle, self._drag_curve_handle))
 
-            if img and not img.isNull():
-                scaled = img.scaled(
-                    int(img_area.width()),
-                    int(img_area.height()),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation
-                )
-                dest_x = img_area.left() + (img_area.width() - scaled.width()) / 2
-                dest_y = img_area.top() + (img_area.height() - scaled.height()) / 2
-                painter.drawImage(QPointF(dest_x, dest_y), scaled)
-            else:
-                painter.setFont(QFont("Cascadia Mono", 9))
-                painter.setPen(QPen(QColor(COLORS["text_muted"])))
-                painter.drawText(
-                    img_area,
-                    Qt.AlignCenter,
-                    "No image loaded\nClick 'Load Image...' in toolbar to select a file\nor select a procedural test pattern in parameters."
-                )
+    def _draw_curve_arrow(self, painter: QPainter, origin, tip, color: QColor, label: str, active: bool):
+        painter.save()
+        s1 = QPointF(*self._curve_world_to_screen(origin[0], origin[1]))
+        s2 = QPointF(*self._curve_world_to_screen(tip[0], tip[1]))
+        pen = QPen(color, 2.4 if active else 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(s1, s2)
+        ang = math.atan2(s2.y() - s1.y(), s2.x() - s1.x())
+        head = 11.0
+        p_a = QPointF(s2.x() - head * math.cos(ang - 0.45), s2.y() - head * math.sin(ang - 0.45))
+        p_b = QPointF(s2.x() - head * math.cos(ang + 0.45), s2.y() - head * math.sin(ang + 0.45))
+        painter.setBrush(QBrush(color))
+        painter.drawPolygon(QPolygonF([s2, p_a, p_b]))
+        rad = 6.8 if active else 5.6
+        painter.setPen(QPen(QColor("#FFFFFF"), 1.6))
+        painter.drawEllipse(s2, rad, rad)
+        painter.setFont(get_ui_font(11, weight=700))
+        painter.setPen(QPen(color))
+        painter.drawText(QRectF(s2.x() + 8, s2.y() - 14, 28, 16), Qt.AlignLeft | Qt.AlignVCenter, label)
+        painter.restore()
 
-        rect_left = QRectF(margin, margin, box_w, box_h)
-        rect_right = QRectF(margin * 2 + box_w, margin, box_w, box_h)
+    def _draw_curve_eval_point(self, painter: QPainter, pt, t: float):
+        painter.save()
+        sx, sy = self._curve_world_to_screen(pt[0], pt[1])
+        glow = QColor("#6C5CE7")
+        glow.setAlpha(50)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(glow))
+        painter.drawEllipse(QPointF(sx, sy), 12, 12)
+        painter.setBrush(QBrush(QColor("#FFE57B")))
+        painter.setPen(QPen(QColor("#6C5CE7"), 2.2))
+        painter.drawEllipse(QPointF(sx, sy), 6.5, 6.5)
+        painter.setFont(get_mono_font(11, weight=600))
+        painter.setPen(QPen(QColor("#4C1D95")))
+        painter.drawText(QRectF(sx + 10, sy + 4, 72, 16), Qt.AlignLeft | Qt.AlignVCenter, f"C({t:.2f})")
+        painter.restore()
 
-        render_qimage(orig_img, rect_left, title_orig, orig_dims, is_processed=False)
-        render_qimage(proc_img, rect_right, title_proc, proc_dims, is_processed=True)
+    def _draw_curve_caption(self, painter: QPainter, text: str, w: float, bottom: float):
+        painter.save()
+        painter.setFont(get_ui_font(12, weight=500))
+        fm = painter.fontMetrics()
+        pad_x, pad_y = 14.0, 8.0
+        tw = min(w - 24.0, fm.horizontalAdvance(text) + pad_x * 2 + 8)
+        th = fm.height() + pad_y * 2
+        rect = QRectF((w - tw) / 2.0, bottom - th - 4.0, tw, th)
+        painter.setPen(QPen(QColor("#DDD6FE"), 1))
+        painter.setBrush(QBrush(QColor("#F5F3FF")))
+        painter.drawRoundedRect(rect, 8, 8)
+        painter.setPen(QPen(QColor("#5B21B6")))
+        painter.drawText(rect.adjusted(pad_x, 0, -pad_x, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
+        painter.restore()
 
+    def _draw_basis_plot(self, painter: QPainter, plot: dict, w: float, h: float, plot_h: float):
+        painter.save()
+        margin_x = 16.0
+        rect = QRectF(margin_x, h - plot_h - 6.0, w - 2 * margin_x, plot_h)
+        painter.setPen(QPen(QColor(COLORS["border"]), 1))
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        painter.drawRoundedRect(rect, 8, 8)
+
+        xs = plot.get("xs") or []
+        series = plot.get("series") or []
+        colors = plot.get("colors") or self._CURVE_POINT_COLORS
+        labels = plot.get("labels") or []
+        marker = plot.get("marker")
+        highlight = plot.get("highlight")
+        inner = rect.adjusted(44, 22, -12, -16)
+        if not xs or inner.width() <= 1:
+            painter.restore()
+            return
+
+        xmin, xmax = xs[0], xs[-1]
+        span = max(1e-6, xmax - xmin)
+
+        def to_plot(u, v):
+            px = inner.left() + (u - xmin) / span * inner.width()
+            py = inner.bottom() - max(0.0, min(1.05, v)) / 1.05 * inner.height()
+            return px, py
+
+        painter.setPen(QPen(QColor(COLORS["grid_line"]), 1))
+        for gv in (0.0, 0.5, 1.0):
+            _, gy = to_plot(xmin, gv)
+            painter.drawLine(QPointF(inner.left(), gy), QPointF(inner.right(), gy))
+
+        for i, ys in enumerate(series):
+            if len(ys) != len(xs) or len(ys) < 2:
+                continue
+            color = QColor(colors[i % len(colors)])
+            if highlight is not None and i != highlight:
+                color.setAlpha(90)
+            path = QPainterPath()
+            path.moveTo(*to_plot(xs[0], ys[0]))
+            for u, v in zip(xs[1:], ys[1:]):
+                path.lineTo(*to_plot(u, v))
+            painter.setPen(QPen(color, 2.1 if highlight in (None, i) else 1.4, Qt.SolidLine, Qt.RoundCap))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+
+        if marker is not None:
+            mx, _ = to_plot(float(marker), 0.0)
+            painter.setPen(QPen(QColor("#6C5CE7"), 1.3, Qt.DashLine))
+            painter.drawLine(QPointF(mx, inner.top()), QPointF(mx, inner.bottom()))
+
+        painter.setFont(get_mono_font(10, weight=600))
+        painter.setPen(QPen(QColor(COLORS["text_muted"])))
+        title = str(plot.get("title") or "Basis")
+        painter.drawText(QRectF(rect.left() + 10, rect.top() + 4, rect.width() - 20, 16),
+                         Qt.AlignLeft | Qt.AlignVCenter, title)
+        # compact legend
+        lx = rect.left() + 10
+        ly = rect.bottom() - 14
+        painter.setFont(get_mono_font(9, weight=600))
+        for i, lab in enumerate(labels):
+            color = QColor(colors[i % len(colors)])
+            painter.setPen(QPen(color, 2))
+            painter.drawLine(QPointF(lx, ly), QPointF(lx + 10, ly))
+            painter.setPen(QPen(color))
+            painter.drawText(QRectF(lx + 12, ly - 7, 28, 14), Qt.AlignLeft | Qt.AlignVCenter, lab)
+            lx += 42
+            if lx > rect.right() - 40:
+                break
         painter.restore()
 
     # ------------------------------------------------------------------

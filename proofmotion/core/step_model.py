@@ -64,7 +64,7 @@ class Text2D:
 @dataclass
 class RenderData:
     """Container for geometric primitives to draw in the 2D viewport."""
-    mode: str = "geometry"  # 'geometry', 'bars', 'pixel_grid', 'image', 'clipping'
+    mode: str = "geometry"  # 'geometry', 'bars', 'pixel_grid', 'clipping', 'curves'
     points: List[Point2D] = field(default_factory=list)
     lines: List[Line2D] = field(default_factory=list)
     polygons: List[Polygon2D] = field(default_factory=list)
@@ -77,8 +77,8 @@ class RenderData:
     search_data: Optional[Dict[str, Any]] = None        # for linear/binary search tiles
     pixel_grid: Optional[Dict[str, Any]] = None         # for rasterization
     clipping_data: Optional[Dict[str, Any]] = None      # for Cohen-Sutherland
+    curve_data: Optional[Dict[str, Any]] = None         # for Bézier / B-spline / Hermite
     matrix_info: Optional[Dict[str, Any]] = None        # for transformations
-    image_data: Optional[Dict[str, Any]] = None         # for OpenCV processing
     
     # View framing hint (xmin, ymin, xmax, ymax) in world coordinates
     view_bounds: Optional[Tuple[float, float, float, float]] = None

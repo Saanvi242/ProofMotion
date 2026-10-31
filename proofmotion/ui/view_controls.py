@@ -25,9 +25,6 @@ class ViewControls(QWidget):
     panRequested = pyqtSignal(float, float)
     gridToggled = pyqtSignal(bool)
     fullscreenToggled = pyqtSignal(bool)
-    openImageClicked = pyqtSignal()
-    saveImageClicked = pyqtSignal()
-    resetImageClicked = pyqtSignal()
     sortingStyleChanged = pyqtSignal(str)
     reducedMotionToggled = pyqtSignal(bool)
 
@@ -136,9 +133,6 @@ class ViewControls(QWidget):
         # In sorting mode, hide 2D pan arrows to give style selector generous breathing room
         for btn in (self._pan_left_btn, self._pan_right_btn, self._pan_up_btn, self._pan_down_btn):
             btn.setVisible(not visible)
-
-    def set_image_mode(self, is_image_mode: bool):
-        pass
 
     def _on_fullscreen_toggled(self, checked: bool):
         self._fullscreen_btn.setText("🗗 Exit Fullscreen" if checked else "⛶ Fullscreen")
