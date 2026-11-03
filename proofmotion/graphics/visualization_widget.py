@@ -27,6 +27,9 @@ import resources.theme as theme
 from resources.theme import COLORS, FONT_FAMILY_MONO, get_ui_font, get_mono_font
 from core.step_model import RenderData
 from graphics.sorting_renderer import SortingPlaygroundRenderer
+from graphics.label_layout import (
+    LabelPlacer, LabelSpec, PlacedLabel, outward_from_centroid, polygon_bbox_anchor, leader_needed
+)
 
 
 class VisualizationWidget(QWidget):
@@ -35,6 +38,7 @@ class VisualizationWidget(QWidget):
     viewChanged = pyqtSignal(float, float, float)  # zoom, pan_x, pan_y
     clippingEndpointDragged = pyqtSignal(str, float, float)  # target ("P1" or "P2"), x, y
     clippingRegionClicked = pyqtSignal(int, str)  # code, region_name
+    curveHandleDragged = pyqtSignal(str, float, float)  # handle id ("P0"/"T0"), x, y
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,6 +62,14 @@ class VisualizationWidget(QWidget):
         # Cohen-Sutherland endpoint dragging & hover
         self._drag_endpoint_target: Optional[str] = None
         self._hovered_endpoint: Optional[str] = None
+
+        # Bézier / Curve handle dragging & hover
+        self._drag_curve_target: Optional[str] = None
+        self._hovered_curve_target: Optional[str] = None
+
+        # Smart label placement engine
+        self._label_placer: Optional[LabelPlacer] = None
+        self._last_placed_labels: List[PlacedLabel] = []
 
         # Animated Sorting Playground Engine
         self._sorting_renderer = SortingPlaygroundRenderer()
@@ -251,10 +263,67 @@ class VisualizationWidget(QWidget):
         return (sx - cx) / scale, (cy - sy) / scale
 
     # ------------------------------------------------------------------
+    # Curve Coordinate Transform
+    # ------------------------------------------------------------------
+    def _get_curve_transform(self) -> Tuple[float, float, float]:
+        w, h = float(self.width()), float(self.height())
+        cd = (getattr(self._render_data, "curve_data", None) or {}) if self._render_data else {}
+        bounds = getattr(self._render_data, "view_bounds", None) if self._render_data else None
+        if bounds and len(bounds) == 4:
+            xmin, ymin, xmax, ymax = bounds
+        else:
+            pts = cd.get("control_points", [])
+            if pts:
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                pad = 2.0
+                xmin, xmax = min(xs) - pad, max(xs) + pad
+                ymin, ymax = min(ys) - pad, max(ys) + pad
+            else:
+                xmin, ymin, xmax, ymax = -8.0, -6.0, 8.0, 6.0
+
+        span_x = max(3.0, float(xmax - xmin))
+        span_y = max(3.0, float(ymax - ymin))
+        margin = 1.15
+        world_w = span_x * margin
+        world_h = span_y * margin
+        usable_w = max(80.0, w - 60.0)
+        usable_h = max(80.0, h - 80.0)
+        scale = min(usable_w / world_w, usable_h / world_h) * self._zoom
+        mid_x = (xmin + xmax) / 2.0
+        mid_y = (ymin + ymax) / 2.0
+        cx = w / 2.0 + self._pan[0] - mid_x * scale
+        cy = h / 2.0 + self._pan[1] + mid_y * scale
+        return cx, cy, scale
+
+    def _curve_world_to_screen(self, x: float, y: float) -> Tuple[float, float]:
+        cx, cy, scale = self._get_curve_transform()
+        return cx + x * scale, cy - y * scale
+
+    def _curve_screen_to_world(self, sx: float, sy: float) -> Tuple[float, float]:
+        cx, cy, scale = self._get_curve_transform()
+        if scale <= 1e-6:
+            return 0.0, 0.0
+        return (sx - cx) / scale, (cy - sy) / scale
+
+    # ------------------------------------------------------------------
     # Mouse interaction (Pan, Zoom & Endpoint Dragging)
     # ------------------------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._render_data and (self._render_data.mode == "curves" or getattr(self._render_data, "curve_data", None)):
+                cd = self._render_data.curve_data or {}
+                if cd.get("draggable", True):
+                    pts = cd.get("control_points", [])
+                    labels = cd.get("labels", [f"P{i}" for i in range(len(pts))])
+                    mx, my = float(event.pos().x()), float(event.pos().y())
+                    for pt, lbl in zip(pts, labels):
+                        sx, sy = self._curve_world_to_screen(pt[0], pt[1])
+                        if (mx - sx) ** 2 + (my - sy) ** 2 <= 22.0 ** 2:
+                            self._drag_curve_target = lbl
+                            self.setCursor(Qt.ClosedHandCursor)
+                            return
+
             if self._render_data and self._render_data.mode == "clipping" and self._render_data.clipping_data:
                 cd = self._render_data.clipping_data
                 view_tab = cd.get("view_tab", "clip_line")
@@ -294,10 +363,33 @@ class VisualizationWidget(QWidget):
             self.setCursor(Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, event):
+        if self._drag_curve_target:
+            wx, wy = self._curve_screen_to_world(float(event.pos().x()), float(event.pos().y()))
+            self.curveHandleDragged.emit(self._drag_curve_target, round(wx, 2), round(wy, 2))
+            return
+
         if self._drag_endpoint_target:
             wx, wy = self._clipping_screen_to_world(float(event.pos().x()), float(event.pos().y()))
             self.clippingEndpointDragged.emit(self._drag_endpoint_target, round(wx, 1), round(wy, 1))
             return
+
+        # Check hover over control points in curves mode
+        if self._render_data and (self._render_data.mode == "curves" or getattr(self._render_data, "curve_data", None)) and not self._dragging:
+            cd = self._render_data.curve_data or {}
+            if cd.get("draggable", True):
+                pts = cd.get("control_points", [])
+                labels = cd.get("labels", [f"P{i}" for i in range(len(pts))])
+                mx, my = float(event.pos().x()), float(event.pos().y())
+                matched = None
+                for pt, lbl in zip(pts, labels):
+                    sx, sy = self._curve_world_to_screen(pt[0], pt[1])
+                    if (mx - sx) ** 2 + (my - sy) ** 2 <= 22.0 ** 2:
+                        matched = lbl
+                        break
+                if matched != self._hovered_curve_target:
+                    self._hovered_curve_target = matched
+                    self.setCursor(Qt.PointingHandCursor if matched else Qt.ArrowCursor)
+                    self.update()
 
         # Check hover over endpoints in clipping mode
         if self._render_data and self._render_data.mode == "clipping" and self._render_data.clipping_data and not self._dragging:
@@ -332,11 +424,16 @@ class VisualizationWidget(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._drag_curve_target:
+                self._drag_curve_target = None
+                self.setCursor(Qt.PointingHandCursor if self._hovered_curve_target else Qt.ArrowCursor)
+                return
             if self._drag_endpoint_target:
                 self._drag_endpoint_target = None
                 self.setCursor(Qt.PointingHandCursor if self._hovered_endpoint else Qt.ArrowCursor)
                 return
             self._dragging = False
+            self.setCursor(Qt.ArrowCursor)
             self.setCursor(Qt.ArrowCursor)
 
     def wheelEvent(self, event):
@@ -375,7 +472,11 @@ class VisualizationWidget(QWidget):
         rd = self._render_data
         mode = rd.mode if rd else "geometry"
 
-        if rd and getattr(rd, "search_data", None) is not None:
+        if rd and getattr(rd, "tree_data", None) is not None:
+            self._draw_tree(painter, rd.tree_data)
+        elif rd and getattr(rd, "graph_data", None) is not None:
+            self._draw_graph(painter, rd.graph_data)
+        elif rd and getattr(rd, "search_data", None) is not None:
             self._draw_search_tiles(painter, rd.search_data)
         elif mode == "bars" and rd.bars is not None:
             self._draw_bars(painter, rd.bars)
@@ -383,6 +484,8 @@ class VisualizationWidget(QWidget):
             self._draw_pixel_grid(painter, rd.pixel_grid)
         elif mode == "clipping" and rd.clipping_data is not None:
             self._draw_clipping(painter, rd.clipping_data)
+        elif (mode == "curves" or getattr(rd, "curve_data", None) is not None) and rd.curve_data is not None:
+            self._draw_curves(painter, rd.curve_data)
         elif mode == "image" and rd.image_data is not None:
             self._draw_image(painter, rd.image_data)
         else:
@@ -405,7 +508,7 @@ class VisualizationWidget(QWidget):
         if self._pan[0] != 0 or self._pan[1] != 0:
             info_text += f" | Pan: ({int(self._pan[0])}, {int(self._pan[1])})"
 
-        # Keep the zoom badge off clipping captions and algorithms (sorting / searching)
+        # Keep the zoom badge off clipping captions and algorithms (sorting / searching / graphs / trees)
         is_clipping = bool(self._render_data and self._render_data.mode == "clipping")
         is_algorithms = bool(
             getattr(self, "_theorem_key", "") in (
@@ -415,6 +518,8 @@ class VisualizationWidget(QWidget):
                 self._render_data.mode == "bars"
                 or getattr(self._render_data, "search_data", None) is not None
                 or getattr(self._render_data, "sort_event", None) is not None
+                or getattr(self._render_data, "tree_data", None) is not None
+                or getattr(self._render_data, "graph_data", None) is not None
             ))
         )
         if not is_clipping and not is_algorithms:
@@ -506,7 +611,6 @@ class VisualizationWidget(QWidget):
             painter.restore()
             return
 
-        occupied_label_rects = []
         t = self._clip_ease()
         prev_rd = self._prev_render_data if self._prev_render_data and self._prev_render_data.mode == rd.mode else None
 
@@ -517,6 +621,11 @@ class VisualizationWidget(QWidget):
             qc = self._parse_color(color)
             qc.setAlpha(int(qc.alpha() * min(1.0, max(0.0, u))))
             return qc
+
+        pending_labels = []
+        screen_polys = []
+        screen_lines = []
+        screen_points = []
 
         # 1. Draw Polygons
         for i, poly in enumerate(rd.polygons):
@@ -540,26 +649,27 @@ class VisualizationWidget(QWidget):
             painter.setPen(pen)
             painter.drawPolygon(qpoly)
 
+            screen_pts = [(p.x(), p.y()) for p in qpoly]
+            screen_polys.append(screen_pts)
+
             if poly.label:
                 centroid_x = sum(pt[0] for pt in poly.points) / len(poly.points)
                 centroid_y = sum(pt[1] for pt in poly.points) / len(poly.points)
 
                 # Skip polygon label if a custom Text2D is co-located at this centroid
                 has_colocated_text = any(
-                    math.hypot(t.x - centroid_x, t.y - centroid_y) < 0.6
-                    for t in rd.texts
+                    math.hypot(txt.x - centroid_x, txt.y - centroid_y) < 0.6
+                    for txt in rd.texts
                 )
                 if not has_colocated_text:
-                    lsx, lsy = world_to_screen(centroid_x, centroid_y)
-                    painter.setFont(get_mono_font(13, weight=600))
-                    painter.setPen(QPen(QColor(COLORS["text_primary"])))
-                    fm = painter.fontMetrics()
-                    pw = min(max(80.0, fm.horizontalAdvance(poly.label) + 20.0), max(1.0, w - 24.0))
-                    ph = max(24.0, fm.height() + 8.0)
-                    label_rect = self._fit_label_rect(QRectF(lsx - pw / 2.0, lsy - ph / 2.0, pw, ph))
-                    label_rect = self._resolve_overlap(label_rect, occupied_label_rects)
-                    occupied_label_rects.append(label_rect)
-                    painter.drawText(label_rect, Qt.AlignCenter, poly.label)
+                    pending_labels.append({
+                        "kind": "polygon",
+                        "text": poly.label,
+                        "color": COLORS.get("text_primary", "#FFFFFF"),
+                        "font": get_mono_font(12, weight=600),
+                        "screen_pts": screen_pts,
+                        "priority": 20,
+                    })
 
             painter.restore()
 
@@ -582,15 +692,15 @@ class VisualizationWidget(QWidget):
                 mid_angle = math.radians(arc.start_angle_deg + arc.span_angle_deg / 2.0)
                 lx = asx + (r_screen + 16) * math.cos(mid_angle)
                 ly = asy - (r_screen + 16) * math.sin(mid_angle)
-                painter.setFont(get_mono_font(12, weight=600))
-                painter.setPen(QPen(self._parse_color(arc.color)))
-                fm = painter.fontMetrics()
-                aw = fm.horizontalAdvance(arc.label) + 14.0
-                ah = fm.height() + 6.0
-                label_rect = self._fit_label_rect(QRectF(lx - aw / 2.0, ly - ah / 2.0, aw, ah))
-                label_rect = self._resolve_overlap(label_rect, occupied_label_rects)
-                occupied_label_rects.append(label_rect)
-                painter.drawText(label_rect, Qt.AlignCenter, arc.label)
+                pending_labels.append({
+                    "kind": "free",
+                    "text": arc.label,
+                    "color": arc.color,
+                    "font": get_mono_font(11, weight=500),
+                    "anchor": (lx, ly),
+                    "outward": (math.cos(mid_angle), -math.sin(mid_angle)),
+                    "priority": 15,
+                })
 
             painter.restore()
 
@@ -616,41 +726,21 @@ class VisualizationWidget(QWidget):
             painter.setPen(pen)
             painter.drawLine(QPointF(sx1, sy1), QPointF(sx2, sy2))
 
+            screen_lines.append(((sx1, sy1), (sx2, sy2), line.width))
             if line.label:
-                mx = (sx1 + sx2) / 2.0
-                my = (sy1 + sy2) / 2.0
+                mx = (sx1 + sx2) * 0.5
+                my = (sy1 + sy2) * 0.5
                 dx = sx2 - sx1
                 dy = sy2 - sy1
-                length = math.hypot(dx, dy)
-
-                painter.setFont(get_mono_font(12, weight=600))
-                painter.setPen(QPen(self._parse_color(line.color)))
-                fm = painter.fontMetrics()
-                lw = min(max(60.0, fm.horizontalAdvance(line.label) + 16.0), max(1.0, w - 24.0))
-                lh = max(20.0, fm.height() + 6.0)
-
-                if length > 0:
-                    unx = -dy / length
-                    uny = dx / length
-                else:
-                    unx, uny = 0.0, -1.0
-
-                # Push label cleanly away from the line
-                if abs(dy) > abs(dx):
-                    # Vertical line: place completely to the left or right with a generous gap
-                    offset_x = -12.0 if (unx < 0 or mx <= cx) else 12.0
-                    rx = mx + offset_x - (lw if offset_x < 0 else 0.0)
-                    ry = my - lh / 2.0
-                else:
-                    # Horizontal line: place above or below
-                    offset_y = 12.0 if (uny > 0 or my >= cy) else -12.0
-                    rx = mx - lw / 2.0
-                    ry = my + offset_y - (0.0 if offset_y > 0 else lh)
-
-                label_rect = self._fit_label_rect(QRectF(rx, ry, lw, lh))
-                label_rect = self._resolve_overlap(label_rect, occupied_label_rects)
-                occupied_label_rects.append(label_rect)
-                painter.drawText(label_rect, Qt.AlignCenter, line.label)
+                pending_labels.append({
+                    "kind": "line",
+                    "text": line.label,
+                    "color": line.color,
+                    "font": get_mono_font(11, weight=500),
+                    "anchor": (mx, my),
+                    "outward": (-dy, dx),
+                    "priority": 18,
+                })
 
             painter.restore()
 
@@ -668,52 +758,165 @@ class VisualizationWidget(QWidget):
             painter.setPen(QPen(QColor(COLORS["bg_app"]), 1.5))
             painter.drawEllipse(QPointF(sx, sy), rad, rad)
 
+            screen_points.append((sx, sy, rad))
             if pt.label:
-                painter.setFont(get_ui_font(13, weight=600))
-                painter.setPen(QPen(color))
-                fm = painter.fontMetrics()
-                label_width = min(max(40.0, fm.horizontalAdvance(pt.label) + 12.0), self.width() - 16.0)
-                label_height = fm.height() + 4.0
-                label_rect = self._fit_label_rect(QRectF(sx + 8, sy - label_height - 2, label_width, label_height))
-                label_rect = self._resolve_overlap(label_rect, occupied_label_rects)
-                occupied_label_rects.append(label_rect)
-                painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignVCenter, pt.label)
+                pending_labels.append({
+                    "kind": "point",
+                    "text": pt.label,
+                    "color": pt.color,
+                    "font": get_ui_font(11, weight=600),
+                    "anchor": (sx, sy),
+                    "outward": outward_from_centroid((sx, sy), (cx, cy)),
+                    "priority": 5,
+                    "pill": True,
+                })
 
             painter.restore()
 
         # 5. Draw Custom Texts
-        for t in rd.texts:
-            painter.save()
-            sx, sy = world_to_screen(t.x, t.y)
-            font = get_mono_font(max(12, t.font_size), weight=600 if t.bold else 500)
-            painter.setFont(font)
-            fm = painter.fontMetrics()
-            tw = min(max(140.0, fm.horizontalAdvance(t.text) + 24.0), max(1.0, w - 24.0))
-            th = max(24.0, fm.height() + 8.0)
-            painter.setPen(QPen(self._parse_color(t.color)))
-            label_rect = self._fit_label_rect(QRectF(sx - tw / 2.0, sy - th / 2.0, tw, th))
-            label_rect = self._resolve_overlap(label_rect, occupied_label_rects)
-            occupied_label_rects.append(label_rect)
-            painter.drawText(label_rect, Qt.AlignCenter, t.text)
-            painter.restore()
+        for txt in rd.texts:
+            sx, sy = world_to_screen(txt.x, txt.y)
+            is_banner = txt.font_size >= 12
+            pending_labels.append({
+                "kind": "banner" if is_banner else "free",
+                "text": txt.text,
+                "color": txt.color,
+                "font": get_mono_font(max(12, txt.font_size), weight=600 if txt.bold else 500),
+                "anchor": (sx, sy),
+                "preferred": (sx - 70, sy - 12),
+                "priority": 25 if is_banner else 12,
+                "pill": is_banner,
+            })
 
-    def _resolve_overlap(self, rect: QRectF, existing: list) -> QRectF:
-        """Nudges rect vertically if it intersects any already drawn label rect."""
-        adjusted = QRectF(rect)
-        for _ in range(12):
-            collision = False
-            for prev in existing:
-                if adjusted.intersects(prev):
-                    collision = True
-                    if adjusted.center().y() >= prev.center().y():
-                        adjusted.moveTop(prev.bottom() + 4.0)
-                    else:
-                        adjusted.moveBottom(prev.top() - 4.0)
-                    adjusted = self._fit_label_rect(adjusted)
-                    break
-            if not collision:
-                break
-        return adjusted
+        self._last_placed_labels = []
+        self._place_and_draw_labels(painter, pending_labels, screen_polys, screen_lines, screen_points)
+
+    def _make_label_placer(self, extra_reserved=None) -> LabelPlacer:
+        w, h = float(self.width()), float(self.height())
+        reserved = [(8.0, h - 30.0, w - 16.0, 26.0)]
+        if extra_reserved:
+            reserved.extend(extra_reserved)
+        placer = LabelPlacer(
+            viewport=(0.0, 0.0, w, h),
+            margin=10.0,
+            reserved=reserved,
+            gap=14.0,
+        )
+        self._label_placer = placer
+        return placer
+
+    def _place_and_draw_labels(self, painter: QPainter, pending: list, polys: list, lines: list, points: list):
+        if not pending:
+            self._last_placed_labels = []
+            return
+        placer = self._make_label_placer()
+        for poly in polys:
+            placer.add_polygon(poly)
+        for p1, p2, width in lines:
+            placer.add_segment(p1, p2, thickness=max(2.0, float(width)))
+        for sx, sy, rad in points:
+            placer.add_point((sx, sy), radius=max(6.0, float(rad) + 3.0))
+
+        specs = []
+        meta = []
+        for item in pending:
+            painter.setFont(item["font"])
+            fm = painter.fontMetrics()
+            text = item["text"]
+            max_w = max(80.0, self.width() - 28.0)
+            tw = min(max(36.0, fm.horizontalAdvance(text) + 16.0), max_w)
+            th = max(20.0, fm.height() + 8.0)
+            if item["kind"] == "polygon":
+                anchor = polygon_bbox_anchor(item["screen_pts"])
+                outward = (0.0, -1.0)
+            else:
+                anchor = item["anchor"]
+                outward = item.get("outward")
+            specs.append(
+                LabelSpec(
+                    text=text,
+                    anchor=anchor,
+                    width=tw,
+                    height=th,
+                    kind=item["kind"],
+                    outward=outward,
+                    preferred=item.get("preferred"),
+                    priority=item.get("priority", 10),
+                )
+            )
+            meta.append(item)
+
+        placed = placer.place_all(specs)
+        self._last_placed_labels = list(placed)
+        by_key = {
+            (p.text, round(p.anchor[0], 1), round(p.anchor[1], 1)): p
+            for p in placed
+        }
+        for item, spec in zip(meta, specs):
+            key = (spec.text, round(spec.anchor[0], 1), round(spec.anchor[1], 1))
+            result = by_key.get(key) or next((p for p in placed if p.text == spec.text), None)
+            if result:
+                self._draw_placed_annotation(
+                    painter,
+                    result,
+                    item["color"],
+                    item["font"],
+                    pill=bool(item.get("pill")),
+                )
+
+    def _draw_placed_annotation(
+        self, painter: QPainter, placed: PlacedLabel, color: Any, font: QFont, pill: bool = False
+    ):
+        painter.save()
+        x, y, w, h = placed.rect
+        rect = QRectF(x, y, w, h)
+        qc = self._parse_color(color)
+        tip = QPointF(placed.anchor[0], placed.anchor[1])
+        cx, cy = x + w * 0.5, y + h * 0.5
+
+        if placed.leader:
+            leader = QPen(Qt.DashLine)
+            leader.setWidthF(1.0)
+            leader.setColor(QColor(qc.red(), qc.green(), qc.blue(), 120))
+            painter.setPen(leader)
+            painter.drawLine(tip, QPointF(cx, cy))
+
+        if pill or placed.kind in ("polygon", "banner", "point"):
+            fill = QColor(255, 255, 255, 228)
+            painter.setBrush(QBrush(fill))
+            painter.setPen(QPen(QColor(qc.red(), qc.green(), qc.blue(), 70), 1.0))
+            painter.drawRoundedRect(rect, 7, 7)
+
+        painter.setFont(font)
+        painter.setPen(QPen(qc))
+        painter.drawText(rect, Qt.AlignCenter, placed.text)
+        painter.restore()
+
+    def _smart_label(self, painter: QPainter, text: str, anchor: Tuple[float, float], color: Any,
+                     font: QFont, kind: str = "point", outward: Optional[Tuple[float, float]] = None,
+                     pill: bool = False, priority: int = 2):
+        if not text:
+            return
+        placer = getattr(self, "_label_placer", None)
+        if placer is None:
+            placer = self._make_label_placer()
+            self._label_placer = placer
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        tw = min(max(32.0, fm.horizontalAdvance(text) + 14.0), max(80.0, self.width() - 28.0))
+        th = max(18.0, fm.height() + 6.0)
+        spec = LabelSpec(
+            text=text,
+            anchor=(float(anchor[0]), float(anchor[1])),
+            width=tw,
+            height=th,
+            kind=kind,
+            outward=outward,
+            priority=priority,
+        )
+        placed = placer.place(spec)
+        self._last_placed_labels = list(placer.placed)
+        self._draw_placed_annotation(painter, placed, color, font, pill=pill)
 
     def _fit_label_rect(self, rect: QRectF) -> QRectF:
         margin = 8.0
@@ -798,6 +1001,410 @@ class VisualizationWidget(QWidget):
                 while y <= h:
                     painter.drawLine(QPointF(ox - 2, y), QPointF(ox + 2, y))
                     y += step_world * scale
+
+        painter.restore()
+
+    # ------------------------------------------------------------------
+    # Graph Algorithms Mode (Prim, Kruskal, Dijkstra)
+    # ------------------------------------------------------------------
+    def _draw_graph(self, painter: QPainter, gd: dict):
+        w, h = float(self.width()), float(self.height())
+        nodes = list(gd.get("nodes", []))
+        edges = list(gd.get("edges", []))
+        if not nodes:
+            painter.save()
+            painter.setPen(QPen(QColor(COLORS["text_muted"])))
+            painter.setFont(get_ui_font(14, weight=400))
+            painter.drawText(QRectF(0, 0, w, h), Qt.AlignCenter, "Graph is empty.")
+            painter.restore()
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        # 1. Understated Context Header (No bulky card, no decorative banner)
+        algo_title = "Prim's Algorithm" if gd.get("type") == "prim" else ("Kruskal's Algorithm" if gd.get("type") == "kruskal" else "MST Comparison")
+        op_label = str(gd.get("status_text", "")).strip()
+        for pfx in ("Prim's Algorithm:", "Kruskal's Algorithm:", "Prim's Algorithm -", "Kruskal's Algorithm -", "Prim's:", "Kruskal's:"):
+            if op_label.lower().startswith(pfx.lower()):
+                op_label = op_label[len(pfx):].strip()
+        if "Total weight" in op_label:
+            op_label = op_label.split("Total weight", 1)[0].rstrip(" .;")
+        if len(op_label) > 65:
+            op_label = op_label[:62] + "..."
+
+        top_y = 16.0
+        painter.setFont(get_ui_font(12, weight=600))
+        painter.setPen(QPen(QColor("#64748B")))
+        context_str = f"{algo_title}  ·  {op_label}" if op_label else algo_title
+        painter.drawText(QRectF(22.0, top_y, w - 190.0, 22.0), Qt.AlignLeft | Qt.AlignVCenter, context_str)
+
+        # Compact metric chip at top right
+        tot_wt = gd.get("total_weight")
+        if tot_wt is not None:
+            wt_text = f"MST Weight: {tot_wt}"
+            painter.setFont(get_mono_font(11, weight=600))
+            fm = painter.fontMetrics()
+            chip_w = fm.horizontalAdvance(wt_text) + 20.0
+            chip_rect = QRectF(w - chip_w - 22.0, top_y, chip_w, 24.0)
+            painter.setBrush(QBrush(QColor("#F8FAFC")))
+            painter.setPen(QPen(QColor("#E2E8F0"), 1.0))
+            painter.drawRoundedRect(chip_rect, 6.0, 6.0)
+            painter.setPen(QPen(QColor("#0F172A")))
+            painter.drawText(chip_rect, Qt.AlignCenter, wt_text)
+
+        # 2. Generous Coordinate Transformation (Maximizes graph space)
+        xs = [float(n.get("x", 0.0)) for n in nodes]
+        ys = [float(n.get("y", 0.0)) for n in nodes]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(1.0, max_x - min_x)
+        span_y = max(1.0, max_y - min_y)
+
+        usable_w = max(100.0, w - 100.0)
+        usable_h = max(100.0, h - 80.0)
+        scale = min(usable_w / span_x, usable_h / span_y) * 0.78 * self._zoom
+        mid_x = (min_x + max_x) / 2.0
+        mid_y = (min_y + max_y) / 2.0
+        cx = w / 2.0 + self._pan[0] - mid_x * scale
+        cy = h / 2.0 + 16.0 + self._pan[1] + mid_y * scale
+
+        pos = {}
+        for n in nodes:
+            nid = str(n.get("id", ""))
+            nx = cx + float(n.get("x", 0.0)) * scale
+            ny = cy - float(n.get("y", 0.0)) * scale
+            pos[nid] = (nx, ny)
+
+        radius = max(22.0, min(28.0, 24.0 * self._zoom))
+
+        # 3. Draw Edges with Clear States and Readable Weights
+        edge_colors = {
+            "selected": QColor("#10B981"),
+            "mst": QColor("#10B981"),
+            "tree": QColor("#10B981"),
+            "active": QColor("#6C5CE7"),
+            "candidate": QColor("#F59E0B"),
+            "path": QColor("#F59E0B"),
+            "rejected": QColor("#EF4444"),
+            "backtrack": QColor("#EF4444"),
+            "cycle": QColor("#EF4444"),
+            "relaxed": QColor("#8B5CF6"),
+            "idle": QColor("#E2E8F0"),
+            "unvisited": QColor("#CBD5E1"),
+        }
+        for edge in edges:
+            u, v = str(edge.get("u", "")), str(edge.get("v", ""))
+            if u not in pos or v not in pos:
+                continue
+            ux, uy = pos[u]
+            vx, vy = pos[v]
+            st = str(edge.get("state", "unvisited")).lower()
+            ec = edge_colors.get(st, edge_colors["unvisited"])
+            ew = 3.6 if st in ("selected", "mst", "tree", "active") else (2.4 if st in ("candidate", "path", "rejected", "backtrack", "cycle") else 1.6)
+
+            dist = math.hypot(vx - ux, vy - uy)
+            if dist > 2 * radius:
+                dx, dy = (vx - ux) / dist, (vy - uy) / dist
+                sx1, sy1 = ux + dx * radius, uy + dy * radius
+                sx2, sy2 = vx - dx * radius, vy - dy * radius
+            else:
+                sx1, sy1, sx2, sy2 = ux, uy, vx, vy
+
+            painter.save()
+            pen = QPen(ec, ew)
+            if st in ("candidate", "path", "rejected", "backtrack", "cycle"):
+                pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawLine(QPointF(sx1, sy1), QPointF(sx2, sy2))
+
+            # Red 'X' rejection indicator for cycle-creating edges
+            if st in ("rejected", "backtrack", "cycle"):
+                mx, my = (sx1 + sx2) * 0.5, (sy1 + sy2) * 0.5
+                painter.setBrush(QBrush(QColor("#FEE2E2")))
+                painter.setPen(QPen(QColor("#EF4444"), 1.2))
+                painter.drawEllipse(QPointF(mx, my), 8.0, 8.0)
+                painter.setPen(QPen(QColor("#B91C1C"), 1.8))
+                painter.drawLine(QPointF(mx - 3.5, my - 3.5), QPointF(mx + 3.5, my + 3.5))
+                painter.drawLine(QPointF(mx - 3.5, my + 3.5), QPointF(mx + 3.5, my - 3.5))
+
+            w_val = edge.get("weight")
+            if w_val is not None:
+                mx = (ux + vx) * 0.5
+                my = (uy + vy) * 0.5
+                if dist > 0.001:
+                    nx_perp = -(vy - uy) / dist * 15.0
+                    ny_perp = (vx - ux) / dist * 15.0
+                else:
+                    nx_perp, ny_perp = 0.0, -15.0
+                pill_x = mx + nx_perp - 14.0
+                pill_y = my + ny_perp - 11.0
+                pill_rect = QRectF(pill_x, pill_y, 28.0, 22.0)
+                painter.setBrush(QBrush(QColor("#FFFFFF")))
+                border_c = ec if st in ("selected", "mst", "active") else QColor("#CBD5E1")
+                painter.setPen(QPen(border_c, 1.2))
+                painter.drawRoundedRect(pill_rect, 6.0, 6.0)
+                painter.setFont(get_mono_font(11, weight=700))
+                text_c = ec if st in ("selected", "mst", "active") else QColor("#334155")
+                painter.setPen(QPen(text_c))
+                painter.drawText(pill_rect, Qt.AlignCenter, str(w_val))
+            painter.restore()
+
+        # 4. Draw Graph Vertices (Crisp, High-Contrast, No Obtrusive Badges)
+        fills = {
+            "current": QColor("#EEF2FF"),
+            "active": QColor("#EEF2FF"),
+            "visited": QColor("#ECFDF5"),
+            "mst": QColor("#ECFDF5"),
+            "frontier": QColor("#FEF3C7"),
+            "in_queue": QColor("#FEF3C7"),
+            "unvisited": QColor("#FFFFFF"),
+        }
+        strokes = {
+            "current": QColor("#6C5CE7"),
+            "active": QColor("#6C5CE7"),
+            "visited": QColor("#10B981"),
+            "mst": QColor("#10B981"),
+            "frontier": QColor("#F59E0B"),
+            "in_queue": QColor("#F59E0B"),
+            "unvisited": QColor("#94A3B8"),
+        }
+        texts = {
+            "current": QColor("#4338CA"),
+            "active": QColor("#4338CA"),
+            "visited": QColor("#065F46"),
+            "mst": QColor("#065F46"),
+            "frontier": QColor("#92400E"),
+            "in_queue": QColor("#92400E"),
+            "unvisited": QColor("#1E293B"),
+        }
+        for n in nodes:
+            nid = str(n.get("id", ""))
+            if nid not in pos:
+                continue
+            nx, ny = pos[nid]
+            st = str(n.get("state", "unvisited")).lower()
+            fc = fills.get(st, fills["unvisited"])
+            sc = strokes.get(st, strokes["unvisited"])
+            tc = texts.get(st, texts["unvisited"])
+
+            painter.save()
+            painter.setBrush(QBrush(fc))
+            painter.setPen(QPen(sc, 2.5 if st in ("current", "active", "visited", "mst") else 1.8))
+            painter.drawEllipse(QPointF(nx, ny), radius, radius)
+
+            lbl = str(n.get("label") or nid)
+            short_lbl = nid if len(lbl) > 5 else lbl
+            painter.setFont(get_ui_font(13, weight=700))
+            painter.setPen(QPen(tc))
+            painter.drawText(QRectF(nx - radius, ny - radius, radius * 2, radius * 2), Qt.AlignCenter, short_lbl)
+            painter.restore()
+
+        painter.restore()
+
+    # ------------------------------------------------------------------
+    # Tree Traversals & BST Mode
+    # ------------------------------------------------------------------
+    def _draw_tree(self, painter: QPainter, td: dict):
+        w, h = float(self.width()), float(self.height())
+        nodes = list(td.get("nodes", []))
+        edges = list(td.get("edges", []))
+        if not nodes:
+            painter.save()
+            painter.setPen(QPen(QColor(COLORS["text_muted"])))
+            painter.setFont(get_ui_font(14, weight=400))
+            painter.drawText(QRectF(0, 0, w, h), Qt.AlignCenter, "Tree is empty.")
+            painter.restore()
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        hud_h, dock_h = 76.0, 86.0
+        hud_w = min(w - 48.0, 760.0)
+        hud_x = (w - hud_w) / 2.0
+        hud_y = 14.0
+
+        # 1. Top HUD Card
+        painter.setBrush(QBrush(QColor(COLORS["bg_panel_alt"])))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1.0))
+        painter.drawRoundedRect(QRectF(hud_x, hud_y, hud_w, hud_h), 10.0, 10.0)
+
+        kind = str(td.get("type", "Tree / BST")).upper()
+        painter.setBrush(QBrush(QColor(COLORS.get("selected_bg", "#F3F0FF"))))
+        painter.setPen(QPen(QColor(COLORS.get("border_focus", "#6C5CE7")), 1.0))
+        badge_w = max(90.0, min(140.0, 14.0 * len(kind)))
+        painter.drawRoundedRect(QRectF(hud_x + 10.0, hud_y + 10.0, badge_w, hud_h - 20.0), 8.0, 8.0)
+        painter.setFont(get_mono_font(12, weight=700))
+        painter.setPen(QPen(QColor(COLORS.get("accent_purple", "#6C5CE7"))))
+        painter.drawText(QRectF(hud_x + 10.0, hud_y + 10.0, badge_w, hud_h - 20.0), Qt.AlignCenter, kind)
+
+        status_text = td.get("status_text", "")
+        comparison_text = td.get("comparison_text", "")
+        text_x = hud_x + badge_w + 20.0
+        text_w = hud_w - badge_w - 30.0
+
+        painter.setFont(get_ui_font(13, weight=600))
+        painter.setPen(QPen(QColor(COLORS["text_primary"])))
+        painter.drawText(QRectF(text_x, hud_y + 12.0, text_w, 24.0), Qt.AlignLeft | Qt.AlignVCenter, status_text)
+
+        if comparison_text:
+            painter.setFont(get_mono_font(12, weight=500))
+            painter.setPen(QPen(QColor(COLORS.get("accent_blue", "#3B82F6"))))
+            painter.drawText(QRectF(text_x, hud_y + 40.0, text_w, 22.0), Qt.AlignLeft | Qt.AlignVCenter, comparison_text)
+
+        # 2. Coordinates
+        xs = [float(n.get("x", 0.0)) for n in nodes]
+        ys = [float(n.get("y", 0.0)) for n in nodes]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(1.0, max_x - min_x)
+        span_y = max(1.0, max_y - min_y)
+
+        usable_w = max(80.0, w - 80.0)
+        usable_h = max(80.0, h - hud_h - dock_h - 50.0)
+        scale_x = usable_w / max(1.0, span_x * 1.25)
+        scale_y = usable_h / max(1.0, span_y * 1.25)
+        scale = min(scale_x, scale_y) * self._zoom
+
+        mid_x = (min_x + max_x) / 2.0
+        mid_y = (min_y + max_y) / 2.0
+        cx = w / 2.0 + self._pan[0] - mid_x * scale
+        cy = hud_y + hud_h + 20.0 + usable_h / 2.0 + self._pan[1] + mid_y * scale
+
+        pos = {}
+        for n in nodes:
+            k = n.get("key")
+            nx = cx + float(n.get("x", 0.0)) * scale
+            ny = cy - float(n.get("y", 0.0)) * scale
+            pos[k] = (nx, ny)
+
+        radius = max(18.0, min(24.0, 20.0 * self._zoom))
+
+        # 3. Draw Branches
+        cand_side = td.get("candidate_side")
+        for e in edges:
+            u, v = e.get("u"), e.get("v")
+            side = e.get("side", "")
+            if u not in pos or v not in pos:
+                continue
+            ux, uy = pos[u]
+            vx, vy = pos[v]
+            dist = math.hypot(vx - ux, vy - uy)
+            if dist > 2 * radius:
+                dx, dy = (vx - ux) / dist, (vy - uy) / dist
+                sx1, sy1 = ux + dx * radius, uy + dy * radius
+                sx2, sy2 = vx - dx * radius, vy - dy * radius
+            else:
+                sx1, sy1, sx2, sy2 = ux, uy, vx, vy
+
+            is_candidate = (e.get("candidate") or (e.get("state") == "candidate") or (side == cand_side and e.get("parent_active")))
+            painter.save()
+            pen = QPen(QColor("#F59E0B" if is_candidate else "#CBD5E1"), 2.5 if is_candidate else 1.8)
+            if is_candidate:
+                pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawLine(QPointF(sx1, sy1), QPointF(sx2, sy2))
+
+            # Direction Pill ("L" or "R") at 40% of branch
+            if side:
+                bx = sx1 + (sx2 - sx1) * 0.4
+                by = sy1 + (sy2 - sy1) * 0.4
+                painter.setBrush(QBrush(QColor("#FFFFFF")))
+                painter.setPen(QPen(QColor("#F59E0B" if is_candidate else "#94A3B8"), 1.0))
+                painter.drawEllipse(QPointF(bx, by), 8.0, 8.0)
+                painter.setFont(get_mono_font(9, weight=700))
+                painter.setPen(QPen(QColor("#B45309" if is_candidate else "#64748B")))
+                painter.drawText(QRectF(bx - 8.0, by - 8.0, 16.0, 16.0), Qt.AlignCenter, side)
+            painter.restore()
+
+        # 4. Draw Nodes
+        fills = {
+            "current": QColor("#6C5CE7"),
+            "comparing": QColor("#F59E0B"),
+            "visited": QColor("#E0E7FF"),
+            "path": QColor("#DDD6FE"),
+            "successor": QColor("#EC4899"),
+            "found": QColor("#10B981"),
+            "unvisited": QColor("#FFFFFF"),
+        }
+        strokes = {
+            "current": QColor("#4338CA"),
+            "comparing": QColor("#D97706"),
+            "visited": QColor("#6366F1"),
+            "path": QColor("#8B5CF6"),
+            "successor": QColor("#BE185D"),
+            "found": QColor("#059669"),
+            "unvisited": QColor("#94A3B8"),
+        }
+        texts = {
+            "current": QColor("#FFFFFF"),
+            "comparing": QColor("#FFFFFF"),
+            "visited": QColor("#3730A3"),
+            "path": QColor("#4C1D95"),
+            "successor": QColor("#FFFFFF"),
+            "found": QColor("#FFFFFF"),
+            "unvisited": QColor("#1E293B"),
+        }
+        for n in nodes:
+            k = n.get("key")
+            if k not in pos:
+                continue
+            nx, ny = pos[k]
+            st = str(n.get("state", "unvisited")).lower()
+            fc = fills.get(st, fills["unvisited"])
+            sc = strokes.get(st, strokes["unvisited"])
+            tc = texts.get(st, texts["unvisited"])
+
+            painter.save()
+            if st in ("current", "found"):
+                halo = QColor(fc)
+                halo.setAlpha(45)
+                painter.setBrush(QBrush(halo))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(QPointF(nx, ny), radius + 6.0, radius + 6.0)
+
+            painter.setBrush(QBrush(fc))
+            painter.setPen(QPen(sc, 2.2 if st in ("current", "comparing", "found") else 1.6))
+            painter.drawEllipse(QPointF(nx, ny), radius, radius)
+
+            painter.setFont(get_mono_font(13, weight=700))
+            painter.setPen(QPen(tc))
+            painter.drawText(QRectF(nx - radius, ny - radius, radius * 2, radius * 2), Qt.AlignCenter, str(k))
+            painter.restore()
+
+        # 5. Bottom Sequence Dock
+        dock_w = min(w - 48.0, 760.0)
+        dock_x = (w - dock_w) / 2.0
+        dock_y = h - dock_h - 12.0
+
+        painter.setBrush(QBrush(QColor(COLORS["bg_panel_alt"])))
+        painter.setPen(QPen(QColor(COLORS["border"]), 1.0))
+        painter.drawRoundedRect(QRectF(dock_x, dock_y, dock_w, dock_h), 10.0, 10.0)
+
+        struct_lbl = str(td.get("sequence_label", "Traversal / Visited Sequence"))
+        painter.setFont(get_ui_font(12, weight=600))
+        painter.setPen(QPen(QColor(COLORS["text_secondary"])))
+        painter.drawText(QRectF(dock_x + 14.0, dock_y + 8.0, dock_w - 28.0, 18.0), Qt.AlignLeft | Qt.AlignVCenter, struct_lbl)
+
+        seq = list(td.get("sequence", []))
+        if not seq:
+            painter.setFont(get_mono_font(12, weight=400))
+            painter.setPen(QPen(QColor(COLORS["text_muted"])))
+            painter.drawText(QRectF(dock_x + 14.0, dock_y + 36.0, dock_w - 28.0, 36.0), Qt.AlignLeft | Qt.AlignVCenter, "(Empty)")
+        else:
+            chip_count = len(seq)
+            chip_w = min(72.0, max(36.0, (dock_w - 28.0 - (chip_count - 1) * 8.0) / max(1, chip_count)))
+            for i, val in enumerate(seq):
+                cx_c = dock_x + 14.0 + i * (chip_w + 8.0)
+                cy_c = dock_y + 34.0
+                is_latest = (i == chip_count - 1)
+                painter.setBrush(QBrush(QColor("#6C5CE7" if is_latest else "#EAE6FF")))
+                painter.setPen(Qt.NoPen)
+                painter.drawRoundedRect(QRectF(cx_c, cy_c, chip_w, 34.0), 8.0, 8.0)
+                painter.setFont(get_mono_font(12, weight=700))
+                painter.setPen(QPen(QColor("#FFFFFF" if is_latest else "#4D3BB8")))
+                painter.drawText(QRectF(cx_c, cy_c, chip_w, 34.0), Qt.AlignCenter, str(val))
 
         painter.restore()
 
@@ -1218,6 +1825,305 @@ class VisualizationWidget(QWidget):
         painter.restore()
 
     # ------------------------------------------------------------------
+    # Bézier & Curves Visualization Mode
+    # ------------------------------------------------------------------
+    def _draw_curves(self, painter: QPainter, cd: dict):
+        w, h = float(self.width()), float(self.height())
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        cx, cy, scale = self._get_curve_transform()
+
+        # 1. Background Grid & Cartesian Axes
+        if self._show_grid:
+            self._draw_curve_grid(painter, w, h, cx, cy, scale)
+
+        # 2. Discrete Plotted Pixels (from Bresenham/DDA line rasterization of chords)
+        pixels = cd.get("raster_pixels", [])
+        curr_px = cd.get("current_pixel")
+        if pixels:
+            p_pen = QPen(QColor(99, 102, 241, 180), 1.0)
+            p_brush = QBrush(QColor(129, 140, 248, 85))
+            for px, py in pixels:
+                # In discrete world coordinates, pixel (px, py) occupies [px-0.5, px+0.5] x [py-0.5, py+0.5]
+                sx0, sy0 = self._curve_world_to_screen(px - 0.5, py + 0.5)
+                sx1, sy1 = self._curve_world_to_screen(px + 0.5, py - 0.5)
+                rw = max(2.0, sx1 - sx0)
+                rh = max(2.0, sy1 - sy0)
+                painter.setPen(p_pen)
+                painter.setBrush(p_brush)
+                painter.drawRoundedRect(QRectF(sx0, sy0, rw, rh), 2.5, 2.5)
+
+        # Highlight current pixel being plotted
+        if curr_px:
+            c_px, c_py = curr_px[0], curr_px[1]
+            sx0, sy0 = self._curve_world_to_screen(c_px - 0.5, c_py + 0.5)
+            sx1, sy1 = self._curve_world_to_screen(c_px + 0.5, c_py - 0.5)
+            rw = max(3.0, sx1 - sx0)
+            rh = max(3.0, sy1 - sy0)
+            painter.setPen(QPen(QColor(217, 119, 6), 2.0))
+            painter.setBrush(QBrush(QColor(245, 158, 11, 160)))
+            painter.drawRoundedRect(QRectF(sx0, sy0, rw, rh), 3.0, 3.0)
+
+        # 3. Subdivided Control Polygons & Chords (Steps 5+)
+        sub_polys = cd.get("subdivision_polygons", [])
+        sub_chords = cd.get("subdivision_chords", [])
+        active_seg = cd.get("active_segment")
+
+        # Palette for multiple subdivision pieces
+        poly_colors = [
+            QColor(6, 182, 212),   # Cyan
+            QColor(139, 92, 246),  # Purple
+            QColor(236, 72, 153),  # Pink
+            QColor(16, 185, 129),  # Emerald
+            QColor(245, 158, 11),  # Amber
+            QColor(59, 130, 246),  # Blue
+            QColor(168, 85, 247),  # Violet
+            QColor(20, 184, 166),  # Teal
+        ]
+
+        # Draw subdivided polygons
+        if sub_polys and len(sub_polys) > 1:
+            for s_idx, sp in enumerate(sub_polys):
+                col = poly_colors[s_idx % len(poly_colors)]
+                pen = QPen(col, 1.6, Qt.DashLine)
+                painter.setPen(pen)
+                for k in range(len(sp) - 1):
+                    p_a, p_b = sp[k], sp[k + 1]
+                    sxa, sya = self._curve_world_to_screen(p_a[0], p_a[1])
+                    sxb, syb = self._curve_world_to_screen(p_b[0], p_b[1])
+                    painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+
+        # Draw approximating chords
+        if sub_chords:
+            chord_pen = QPen(QColor(79, 70, 229, 210), 2.0, Qt.SolidLine)
+            painter.setPen(chord_pen)
+            for ch in sub_chords:
+                if len(ch) >= 2:
+                    p_a, p_b = ch[0], ch[-1]
+                    sxa, sya = self._curve_world_to_screen(p_a[0], p_a[1])
+                    sxb, syb = self._curve_world_to_screen(p_b[0], p_b[1])
+                    painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+                    # Tiny endpoint dots
+                    painter.setBrush(QBrush(QColor(79, 70, 229)))
+                    painter.drawEllipse(QPointF(sxa, sya), 2.5, 2.5)
+                    painter.drawEllipse(QPointF(sxb, syb), 2.5, 2.5)
+
+        # Draw active segment highlight (chord currently being rasterized)
+        if active_seg and len(active_seg) >= 2:
+            p_a, p_b = active_seg[0], active_seg[1]
+            sxa, sya = self._curve_world_to_screen(p_a[0], p_a[1])
+            sxb, syb = self._curve_world_to_screen(p_b[0], p_b[1])
+            # Glow line
+            painter.setPen(QPen(QColor(244, 63, 94, 90), 6.0, Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+            # Core line
+            painter.setPen(QPen(QColor(225, 29, 72), 3.0, Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+
+        # 4. Original Control Polygon (P0 -> P1 -> P2 -> P3)
+        ctrl_pts = cd.get("control_points", [])
+        labels = cd.get("labels", [f"P{i}" for i in range(len(ctrl_pts))])
+        show_poly = cd.get("show_polygon", True)
+
+        if show_poly and len(ctrl_pts) >= 2:
+            poly_pen = QPen(QColor(148, 163, 184, 180), 1.8, Qt.DashLine)
+            painter.setPen(poly_pen)
+            for i in range(len(ctrl_pts) - 1):
+                p_a, p_b = ctrl_pts[i], ctrl_pts[i + 1]
+                sxa, sya = self._curve_world_to_screen(p_a[0], p_a[1])
+                sxb, syb = self._curve_world_to_screen(p_b[0], p_b[1])
+                painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+
+        # 5. De Casteljau Pyramid & Midpoints Construction
+        pyramid = cd.get("pyramid", [])
+        reveal_level = cd.get("reveal_level", 0)
+
+        if pyramid and reveal_level >= 1:
+            # Level 1 (Q0, Q1, Q2)
+            if len(pyramid) > 1 and reveal_level >= 1:
+                q_pts = pyramid[1]
+                painter.setPen(QPen(QColor(16, 185, 129), 2.0, Qt.DashLine))
+                for i in range(len(q_pts) - 1):
+                    sxa, sya = self._curve_world_to_screen(q_pts[i][0], q_pts[i][1])
+                    sxb, syb = self._curve_world_to_screen(q_pts[i + 1][0], q_pts[i + 1][1])
+                    painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+                for i, q in enumerate(q_pts):
+                    sx, sy = self._curve_world_to_screen(q[0], q[1])
+                    painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
+                    painter.setBrush(QBrush(QColor(16, 185, 129)))
+                    painter.drawEllipse(QPointF(sx, sy), 5.0, 5.0)
+                    self._draw_curve_pill(painter, sx, sy - 14, f"Q{i}", QColor("#065F46"), QColor("#D1FAE5"))
+
+            # Level 2 (R0, R1)
+            if len(pyramid) > 2 and reveal_level >= 2:
+                r_pts = pyramid[2]
+                painter.setPen(QPen(QColor(245, 158, 11), 2.2, Qt.DashLine))
+                for i in range(len(r_pts) - 1):
+                    sxa, sya = self._curve_world_to_screen(r_pts[i][0], r_pts[i][1])
+                    sxb, syb = self._curve_world_to_screen(r_pts[i + 1][0], r_pts[i + 1][1])
+                    painter.drawLine(QPointF(sxa, sya), QPointF(sxb, syb))
+                for i, r in enumerate(r_pts):
+                    sx, sy = self._curve_world_to_screen(r[0], r[1])
+                    painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
+                    painter.setBrush(QBrush(QColor(245, 158, 11)))
+                    painter.drawEllipse(QPointF(sx, sy), 5.5, 5.5)
+                    self._draw_curve_pill(painter, sx, sy - 14, f"R{i}", QColor("#92400E"), QColor("#FEF3C7"))
+
+            # Level 3 (S0 Split Point on Curve)
+            if len(pyramid) > 3 and reveal_level >= 3:
+                s0 = pyramid[3][0]
+                sx, sy = self._curve_world_to_screen(s0[0], s0[1])
+                # Outer glow ring
+                painter.setPen(QPen(QColor(124, 58, 237, 120), 2.5))
+                painter.setBrush(QBrush(QColor(124, 58, 237, 40)))
+                painter.drawEllipse(QPointF(sx, sy), 12.0, 12.0)
+                # Split point core
+                painter.setPen(QPen(QColor("#FFFFFF"), 2.5))
+                painter.setBrush(QBrush(QColor(124, 58, 237)))
+                painter.drawEllipse(QPointF(sx, sy), 6.5, 6.5)
+                self._draw_curve_pill(painter, sx, sy + 18, "S0 (t=0.5)", QColor("#5B21B6"), QColor("#EDE9FE"))
+
+        # 6. Continuous Smooth Bézier Curve
+        show_curve = cd.get("show_curve", True)
+        curve_samples = cd.get("curve_samples", [])
+        if show_curve and len(curve_samples) >= 2:
+            path = QPainterPath()
+            s0x, s0y = self._curve_world_to_screen(curve_samples[0][0], curve_samples[0][1])
+            path.moveTo(s0x, s0y)
+            for pt in curve_samples[1:]:
+                sx, sy = self._curve_world_to_screen(pt[0], pt[1])
+                path.lineTo(sx, sy)
+            # Rich smooth curve stroke
+            curve_pen = QPen(QColor(124, 58, 237), 3.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            painter.setPen(curve_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+
+        # 7. Control Points & Handles (Interactive draggable vertices)
+        for i, pt in enumerate(ctrl_pts):
+            lbl = labels[i] if i < len(labels) else f"P{i}"
+            sx, sy = self._curve_world_to_screen(pt[0], pt[1])
+            is_hover = (lbl == self._hovered_curve_target)
+            is_drag = (lbl == self._drag_curve_target)
+
+            # Outer glow halo if hovered or dragged
+            if is_hover or is_drag:
+                halo_color = QColor(99, 102, 241, 70 if is_drag else 40)
+                painter.setPen(QPen(QColor(99, 102, 241, 200), 1.5))
+                painter.setBrush(QBrush(halo_color))
+                painter.drawEllipse(QPointF(sx, sy), 16.0, 16.0)
+
+            # Handle body
+            painter.setPen(QPen(QColor(79, 70, 229), 2.5))
+            painter.setBrush(QBrush(QColor("#FFFFFF")))
+            painter.drawEllipse(QPointF(sx, sy), 7.5, 7.5)
+
+            # Center pip
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor(79, 70, 229)))
+            painter.drawEllipse(QPointF(sx, sy), 3.0, 3.0)
+
+            # Coordinate badge pill
+            pill_text = f"{lbl} ({pt[0]:.1f}, {pt[1]:.1f})"
+            self._draw_curve_pill(painter, sx, sy - 17, pill_text, QColor("#1E293B"), QColor("#F8FAFC"), border_color=QColor("#CBD5E1"))
+
+        # 8. Top-Left Context Badge & Bottom Hint
+        painter.setFont(get_ui_font(11, weight=600))
+        algo_name = cd.get("raster_algorithm", "Bresenham")
+        badge_text = f"BÉZIER SUBDIVISION  •  De Casteljau  •  Rasterizer: {algo_name}"
+        self._draw_curve_pill(painter, 16, 14, badge_text, QColor("#4338CA"), QColor("#EEF2FF"), border_color=QColor("#C7D2FE"), anchor="left")
+
+        if cd.get("draggable", True):
+            painter.setFont(get_ui_font(11, weight=500))
+            painter.setPen(QPen(QColor("#64748B")))
+            painter.drawText(QRectF(20, h - 34, 480, 20), Qt.AlignLeft | Qt.AlignVCenter, "Tip: Drag control points P0–P3 on canvas to reshape the curve in real time.")
+
+        painter.restore()
+
+    def _draw_curve_pill(self, painter: QPainter, x: float, y: float, text: str,
+                         text_color: QColor, bg_color: QColor, border_color: Optional[QColor] = None, anchor: str = "center"):
+        painter.save()
+        font = get_mono_font(10, weight=600)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        tw = fm.horizontalAdvance(text)
+        th = fm.height()
+        pad_x, pad_y = 8, 3
+        rw = tw + pad_x * 2
+        rh = th + pad_y * 2
+        if anchor == "left":
+            rx = x
+            ry = y
+        else:
+            rx = x - rw / 2.0
+            ry = y - rh / 2.0
+        rect = QRectF(rx, ry, rw, rh)
+
+        painter.setPen(QPen(border_color or text_color, 1.0))
+        painter.setBrush(QBrush(bg_color))
+        painter.drawRoundedRect(rect, 4.0, 4.0)
+
+        painter.setPen(QPen(text_color))
+        painter.drawText(rect, Qt.AlignCenter, text)
+        painter.restore()
+
+    def _draw_curve_grid(self, painter: QPainter, w: float, h: float, cx: float, cy: float, scale: float):
+        if scale <= 1e-6:
+            return
+        grid_step = 1.0 if scale >= 22.0 else 2.0
+        painter.save()
+
+        # Dot-line coordinate grid
+        painter.setPen(QPen(QColor(COLORS["grid_line"]), 0.8, Qt.DotLine))
+        x0 = int((-cx) / (scale * grid_step)) * grid_step - grid_step
+        x1 = int((w - cx) / (scale * grid_step)) * grid_step + grid_step
+        y0 = int((cy - h) / (scale * grid_step)) * grid_step - grid_step
+        y1 = int(cy / (scale * grid_step)) * grid_step + grid_step
+
+        x = x0
+        while x <= x1:
+            gx, _ = self._curve_world_to_screen(x, 0)
+            painter.drawLine(QPointF(gx, 0), QPointF(gx, h))
+            x += grid_step
+
+        y = y0
+        while y <= y1:
+            _, gy = self._curve_world_to_screen(0, y)
+            painter.drawLine(QPointF(0, gy), QPointF(w, gy))
+            y += grid_step
+
+        # Main Axes
+        painter.setPen(QPen(QColor(COLORS["axis_line"]), 1.2))
+        ax, ay = self._curve_world_to_screen(0, 0)
+        painter.drawLine(QPointF(0, ay), QPointF(w, ay))
+        painter.drawLine(QPointF(ax, 0), QPointF(ax, h))
+
+        # Axis ticks and numbers
+        painter.setFont(get_mono_font(9.5, weight=400))
+        painter.setPen(QPen(QColor(COLORS["text_muted"])))
+        tick_step = 2.0 if scale < 35.0 else 1.0
+        tx = x0
+        while tx <= x1:
+            if abs(tx) > 0.01:
+                gx, _ = self._curve_world_to_screen(tx, 0)
+                painter.drawLine(QPointF(gx, ay - 3), QPointF(gx, ay + 3))
+                val_str = f"{int(tx) if float(tx).is_integer() else tx}"
+                painter.drawText(QRectF(gx - 18, ay + 5, 36, 14), Qt.AlignCenter, val_str)
+            tx += tick_step
+
+        ty = y0
+        while ty <= y1:
+            if abs(ty) > 0.01:
+                _, gy = self._curve_world_to_screen(0, ty)
+                painter.drawLine(QPointF(ax - 3, gy), QPointF(ax + 3, gy))
+                val_str = f"{int(ty) if float(ty).is_integer() else ty}"
+                painter.drawText(QRectF(ax - 28, gy - 7, 24, 14), Qt.AlignRight | Qt.AlignVCenter, val_str)
+            ty += tick_step
+
+        painter.restore()
+
+    # ------------------------------------------------------------------
     # Cohen-Sutherland Clipping Mode
     # ------------------------------------------------------------------
     _CLIP_BIT_COLORS = {
@@ -1247,6 +2153,7 @@ class VisualizationWidget(QWidget):
     }
 
     def _draw_clipping(self, painter: QPainter, cd: dict):
+        self._label_placer = self._make_label_placer()
         view_tab = cd.get("view_tab", "clip_line")
         if view_tab == "region_codes":
             self._draw_clip_region_lesson(painter, cd)
@@ -1549,19 +2456,13 @@ class VisualizationWidget(QWidget):
         painter.setPen(QPen(QColor("#FFFFFF"), 2.0 if hover else 1.6))
         painter.drawEllipse(QPointF(sx, sy), rad, rad)
 
-        painter.setFont(get_ui_font(12, weight=700))
-        painter.setPen(QPen(color))
         label = f"{pt_id}  ({wx:.1f}, {wy:.1f})"
-        fm = painter.fontMetrics()
-        lw = fm.horizontalAdvance(label) + 14
-        lx = sx + 12 if sx < w - 150 else sx - lw - 12
-        ly = sy - 28
-        pill = QRectF(lx, ly, lw, 20)
-        painter.setBrush(QBrush(QColor(255, 255, 255, 230)))
-        painter.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 90), 1.0))
-        painter.drawRoundedRect(pill, 8, 8)
-        painter.setPen(QPen(color))
-        painter.drawText(pill, Qt.AlignCenter, label)
+        outward = (1.0, -1.0) if sx < w - 150 else (-1.0, -1.0)
+        self._smart_label(
+            painter, label, (sx, sy), color,
+            get_ui_font(12, weight=700),
+            kind="point", outward=outward, pill=True, priority=4
+        )
         if show_code:
             self._draw_clip_code_pills(
                 painter, sx, sy, w, code_str,

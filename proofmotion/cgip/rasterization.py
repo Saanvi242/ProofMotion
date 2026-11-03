@@ -15,6 +15,80 @@ from core.step_model import VisualizationStep, RenderData
 from resources.theme import COLORS
 
 
+def dda_line_steps(x0: int, y0: int, x1: int, y1: int) -> List[Dict[str, Any]]:
+    """
+    Pure Digital Differential Analyzer (DDA) step-by-step iteration data.
+    Returns per-step data: k, curr_x, curr_y, px, py, dx, dy, steps_count, x_inc, y_inc, is_last.
+    """
+    dx = x1 - x0
+    dy = y1 - y0
+    steps_count = max(abs(dx), abs(dy))
+    if steps_count == 0:
+        return [{
+            "k": 0, "curr_x": float(x0), "curr_y": float(y0),
+            "px": int(x0), "py": int(y0), "dx": 0, "dy": 0,
+            "steps_count": 0, "x_inc": 0.0, "y_inc": 0.0, "is_last": True,
+        }]
+
+    x_inc = dx / steps_count
+    y_inc = dy / steps_count
+    curr_x = float(x0)
+    curr_y = float(y0)
+    res = []
+
+    for k in range(steps_count + 1):
+        px = int(round(curr_x))
+        py = int(round(curr_y))
+        res.append({
+            "k": k, "curr_x": curr_x, "curr_y": curr_y,
+            "px": px, "py": py, "dx": dx, "dy": dy,
+            "steps_count": steps_count, "x_inc": x_inc, "y_inc": y_inc,
+            "is_last": (k == steps_count),
+        })
+        curr_x += x_inc
+        curr_y += y_inc
+    return res
+
+
+def bresenham_line_steps(x0: int, y0: int, x1: int, y1: int) -> List[Dict[str, Any]]:
+    """
+    Pure Bresenham integer step-by-step iteration data across all 8 octants.
+    Returns per-step data: k, x, y, dx, dy, sx, sy, err, e2, step_x, step_y, is_steep, is_last.
+    """
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+    is_steep = dy > dx
+
+    x, y = int(x0), int(y0)
+    k = 0
+    res = []
+
+    while True:
+        is_last = (x == x1 and y == y1)
+        e2 = 2 * err
+        step_x = e2 > -dy
+        step_y = e2 < dx
+        res.append({
+            "k": k, "x": x, "y": y, "dx": dx, "dy": dy,
+            "sx": sx, "sy": sy, "err": err, "e2": e2,
+            "step_x": step_x, "step_y": step_y,
+            "is_steep": is_steep, "is_last": is_last,
+        })
+        if is_last:
+            break
+        if step_x:
+            err -= dy
+            x += sx
+        if step_y:
+            err += dx
+            y += sy
+        k += 1
+    return res
+
+
 def dda_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
     """
     Pure Digital Differential Analyzer (DDA) rasterization calculation.
@@ -22,25 +96,7 @@ def dda_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
     Handles horizontal, vertical, diagonal, steep, shallow, positive and negative slopes,
     and degenerate zero-length lines.
     """
-    dx = x1 - x0
-    dy = y1 - y0
-    steps_count = max(abs(dx), abs(dy))
-    if steps_count == 0:
-        return [(int(x0), int(y0))]
-
-    x_inc = dx / steps_count
-    y_inc = dy / steps_count
-
-    curr_x = float(x0)
-    curr_y = float(y0)
-    pixels = []
-
-    for _ in range(steps_count + 1):
-        pixels.append((int(round(curr_x)), int(round(curr_y))))
-        curr_x += x_inc
-        curr_y += y_inc
-
-    return pixels
+    return [(s["px"], s["py"]) for s in dda_line_steps(x0, y0, x1, y1)]
 
 
 def bresenham_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
@@ -48,28 +104,7 @@ def bresenham_line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
     Pure Bresenham integer-only line drawing across all 8 octants.
     Returns the ordered list of integer pixel coordinates (x, y).
     """
-    dx = abs(x1 - x0)
-    dy = abs(y1 - y0)
-    sx = 1 if x0 < x1 else -1
-    sy = 1 if y0 < y1 else -1
-    err = dx - dy
-
-    x, y = int(x0), int(y0)
-    pixels = []
-
-    while True:
-        pixels.append((x, y))
-        if x == x1 and y == y1:
-            break
-        e2 = 2 * err
-        if e2 > -dy:
-            err -= dy
-            x += sx
-        if e2 < dx:
-            err += dx
-            y += sy
-
-    return pixels
+    return [(s["x"], s["y"]) for s in bresenham_line_steps(x0, y0, x1, y1)]
 
 
 def midpoint_circle(cx: int, cy: int, r: int, deduplicate: bool = True) -> List[Tuple[int, int]]:
@@ -318,16 +353,25 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
         else:
             cand = [(x + sx, y), (x + sx, y + sy)]
 
+        err_before = err
         e2 = 2 * err
-        decision_info = f"Current error term: err = {err},  2·err = {e2}"
+        decision_info = f"Current error term: err = {err_before},  2·err = {e2}"
         next_x, next_y = x, y
+        step_x = e2 > -dy
+        step_y = e2 < dx
+        if step_x and step_y:
+            lean, choice = 0, "diagonal"
+        elif step_x:
+            lean, choice = -1, "x"
+        else:
+            lean, choice = 1, "y"
 
         step_expl = f"Plotted ({x}, {y}). "
-        if e2 > -dy:
+        if step_x:
             err -= dy
             next_x += sx
             step_expl += f"2·err > -dy ({e2} > {-dy}) ⟹ step X by {sx}. "
-        if e2 < dx:
+        if step_y:
             err += dx
             next_y += sy
             step_expl += f"2·err < dx ({e2} < {dx}) ⟹ step Y by {sy}."
@@ -337,7 +381,7 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
             title=f"Bresenham Step: Plot Pixel ({x}, {y})",
             equation=decision_info,
             explanation=step_expl,
-            values={"pixel": (x, y), "error": err, "candidates": cand},
+            values={"pixel": (x, y), "error": err, "decision": err_before, "candidates": cand, "choice": choice},
             metrics={"plotted_count": len(plotted)},
             render_data=RenderData(
                 mode="pixel_grid",
@@ -348,6 +392,11 @@ def bresenham_line_trace(x0: int, y0: int, x1: int, y1: int, grid_size: int = 20
                     "current": (x, y),
                     "start_point": (x0, y0),
                     "end_point": (x1, y1),
+                    "decision": err_before,
+                    "decision_kind": "err",
+                    "e2": e2,
+                    "lean": lean,
+                    "choice": choice,
                 }
             )
         ))
@@ -456,16 +505,19 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
         cand_E = (cx + x, cy + y)
         cand_SE = (cx + x, cy + y - 1)
 
+        p_before = p
         if p < 0:
             # Midpoint is inside circle, choose E (x+1, y)
             p_next = p + 2 * x + 1
             expl = f"p = {p} < 0: Midpoint is inside the circle boundary. Choose E: y remains {y}. p_next = p + 2x + 1 = {p_next}."
+            lean, choice = -1, "E"
             p = p_next
         else:
             # Midpoint is outside circle, choose SE (x+1, y-1)
             y -= 1
             p_next = p + 2 * x + 1 - 2 * y
             expl = f"p = {p} ≥ 0: Midpoint is outside or on circle boundary. Choose SE: y decrements to {y}. p_next = p + 2x + 1 - 2y = {p_next}."
+            lean, choice = 1, "SE"
             p = p_next
 
         sym_pts = get_symmetric_points(x, y)
@@ -478,7 +530,7 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
             title=f"Step x={x}, y={y} (p={p})",
             equation=f"Decision p = {p_next},  Selected (x={x}, y={y})",
             explanation=expl + f" Symmetrically replicated across all 8 octants ({len(sym_pts)} points).",
-            values={"x": x, "y": y, "decision_param": p, "octant_points": sym_pts},
+            values={"x": x, "y": y, "decision_param": p_before, "octant_points": sym_pts, "choice": choice},
             metrics={"plotted_count": len(plotted)},
             render_data=RenderData(
                 mode="pixel_grid",
@@ -488,6 +540,10 @@ def midpoint_circle_trace(cx: int, cy: int, r: int, grid_size: int = 24) -> List
                     "candidates": [cand_E, cand_SE],
                     "current": (cx + x, cy + y),
                     "center": (cx, cy),
+                    "decision": p_before,
+                    "decision_kind": "p",
+                    "lean": lean,
+                    "choice": choice,
                 }
             )
         ))

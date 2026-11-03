@@ -25,9 +25,6 @@ class ViewControls(QWidget):
     panRequested = pyqtSignal(float, float)
     gridToggled = pyqtSignal(bool)
     fullscreenToggled = pyqtSignal(bool)
-    openImageClicked = pyqtSignal()
-    saveImageClicked = pyqtSignal()
-    resetImageClicked = pyqtSignal()
     sortingStyleChanged = pyqtSignal(str)
     reducedMotionToggled = pyqtSignal(bool)
 
@@ -61,9 +58,9 @@ class ViewControls(QWidget):
         row.addWidget(self._style_container)
         self._style_container.setVisible(False)
 
-        label = QLabel("VIEW")
-        label.setObjectName("SpeedLabel")
-        row.addWidget(label)
+        self._view_label = QLabel("VIEW")
+        self._view_label.setObjectName("SpeedLabel")
+        row.addWidget(self._view_label)
 
         self._zoom_out_btn = self._make_btn("\u2212")
         self._zoom_out_btn.setToolTip("Zoom Out")
@@ -127,18 +124,22 @@ class ViewControls(QWidget):
     def set_sorting_style(self, style: str):
         pass
 
-    def set_zoom_controls_visible(self, visible: bool):
+    def set_zoom_controls_visible(self, visible: bool, show_pan: bool = True):
+        if hasattr(self, "_view_label"):
+            self._view_label.setVisible(visible and show_pan)
         self._zoom_out_btn.setVisible(visible)
         self._zoom_in_btn.setVisible(visible)
+        for btn in (self._pan_left_btn, self._pan_right_btn, self._pan_up_btn, self._pan_down_btn):
+            btn.setVisible(visible and show_pan)
+
+    def set_grid_control_visible(self, visible: bool):
+        self._grid_btn.setVisible(visible)
 
     def set_sorting_controls_visible(self, visible: bool):
         self._style_container.setVisible(visible)
-        # In sorting mode, hide 2D pan arrows to give style selector generous breathing room
-        for btn in (self._pan_left_btn, self._pan_right_btn, self._pan_up_btn, self._pan_down_btn):
-            btn.setVisible(not visible)
-
-    def set_image_mode(self, is_image_mode: bool):
-        pass
+        if visible:
+            for btn in (self._pan_left_btn, self._pan_right_btn, self._pan_up_btn, self._pan_down_btn):
+                btn.setVisible(False)
 
     def _on_fullscreen_toggled(self, checked: bool):
         self._fullscreen_btn.setText("🗗 Exit Fullscreen" if checked else "⛶ Fullscreen")

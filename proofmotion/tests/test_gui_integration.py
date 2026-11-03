@@ -28,7 +28,7 @@ class TestGUIIntegration(unittest.TestCase):
         self.window.close()
 
     def test_module_navigation(self):
-        modules = ['theorems', 'algorithms', 'transformations', 'rasterization', 'clipping']
+        modules = ['algorithms', 'transformations', 'rasterization', 'clipping', 'theorems']
         for mod in modules:
             self.controller.on_module_selected(mod)
             self.assertEqual(self.controller.current_module, mod)
@@ -84,6 +84,7 @@ class TestGUIIntegration(unittest.TestCase):
         self.assertFalse(self.window.equation_panel._step_title_label.isHidden())
 
     def test_theorem_sidebar_selection_remains_readable(self):
+        self.controller.on_module_selected('theorems')
         panel = self.window.theorem_panel
         selected_button = panel._buttons["circle_area"]
         selected_button.click()
@@ -100,6 +101,7 @@ class TestGUIIntegration(unittest.TestCase):
             self.assertEqual(label.property("selected"), "false")
 
     def test_zoom_and_pan(self):
+        self.controller.on_module_selected('theorems')
         initial_zoom = self.window.visualization_widget._zoom
         self.controller.on_zoom_in()
         self.assertGreater(self.window.visualization_widget._zoom, initial_zoom)
@@ -194,6 +196,7 @@ class TestGUIIntegration(unittest.TestCase):
 
     def test_fullscreen_canvas_toggle(self):
         """Verify Fullscreen toggle expands canvas by hiding sidebars/header, and restores cleanly."""
+        self.controller.on_module_selected('theorems')
         self.assertFalse(self.window._is_canvas_fullscreen)
         self.assertFalse(self.window._header_widget.isHidden())
         self.assertFalse(self.window.theorem_panel.isHidden())
@@ -220,6 +223,7 @@ class TestGUIIntegration(unittest.TestCase):
 
     def test_fractional_parameter_input_and_stepping(self):
         """Verify entering fractional/decimal numbers and stepping fractional values."""
+        self.controller.on_module_selected('theorems')
         self.controller.on_topic_selected('circle_area')
         radius_input = self.window.parameter_panel._inputs["radius"]
 
@@ -233,6 +237,252 @@ class TestGUIIntegration(unittest.TestCase):
             self.window.parameter_panel._specs[0], radius_input, 1
         )
         self.assertEqual(float(radius_input.text()), 8.0)
+
+    def test_playground_navigation_preserves_lessons(self):
+        self.assertNotIn("playground", self.window._module_buttons)
+        self.assertTrue(self.window.home_active())
+        self.assertTrue(self.window._studio_open_btn.isHidden())
+        self.assertTrue(self.window._studio_leave_btn.isHidden())
+
+        self.controller.on_module_selected("playground")
+        self.assertEqual(self.controller.current_module, "playground")
+        self.assertTrue(self.window.playground_active())
+        self.assertEqual(self.window._workspace_stack.currentIndex(), 2)
+        self.assertTrue(self.window._nav_pill_bar.isHidden())
+        self.assertTrue(self.window._studio_open_btn.isHidden())
+        self.assertFalse(self.window._studio_leave_btn.isHidden())
+        self.assertFalse(self.window._studio_mode_bar.isHidden())
+
+        host = self.window.playground_host
+        self.assertEqual(host.current_mode(), "2d")
+        self.assertIs(host.stack.currentWidget(), host.ws2d)
+        self.assertIsNotNone(host.ws2d.scene.selected())
+        host.ws2d.scene.apply_translate(1.0, 0.5)
+        obj = host.ws2d.scene.selected()
+        self.assertGreater(len(obj.history), 0)
+
+        self.controller.on_module_selected("theorems")
+        self.assertFalse(self.window.playground_active())
+        self.assertTrue(self.window.lessons_active())
+        self.assertEqual(self.window._workspace_stack.currentIndex(), 1)
+        self.assertGreater(len(self.controller.current_steps), 0)
+        self.assertFalse(self.window.theorem_panel.isHidden())
+        self.assertFalse(self.window.equation_panel.isHidden())
+        self.assertTrue(self.window._nav_pill_bar.isHidden())
+        self.assertFalse(self.window._studio_open_btn.isHidden())
+        self.assertTrue(self.window._studio_leave_btn.isHidden())
+        self.assertFalse(self.window._home_back_btn.isHidden())
+        self.assertEqual(self.window._module_chip.text(), "Theorems")
+
+    def test_playground_does_not_appear_in_lesson_catalog(self):
+        self.assertNotIn("playground", self.controller._catalog)
+        self.assertNotIn("playground", self.window._module_buttons)
+
+    def test_studio_button_opens_canvas_directly(self):
+        self.window.home_host.studioChosen.emit()
+        self.assertTrue(self.window.playground_active())
+        host = self.window.playground_host
+        self.assertEqual(host.current_mode(), "2d")
+        self.assertIs(host.stack.currentWidget(), host.ws2d)
+        self.assertEqual(host.ws2d.hud.objectName(), "StudioMatrixHud")
+        self.assertEqual(host.ws2d.rail.objectName(), "StudioToolRail")
+        host.apply_starter("spin")
+        obj = host.ws2d.scene.selected()
+        self.assertIsNotNone(obj)
+        self.assertGreater(len(obj.history), 0)
+        self.assertEqual(host.ws2d.filmstrip.objectName(), "StudioFilmstrip")
+        self.assertNotIn("basis", self.window._studio_mode_buttons)
+        self.assertNotIn("lift", self.window._studio_mode_buttons)
+        self.assertIn("2d", self.window._studio_mode_buttons)
+        self.assertIn("3d", self.window._studio_mode_buttons)
+        self.assertIn("run", self.window._studio_mode_buttons)
+
+    def test_bezier_subdivision_in_rasterization(self):
+        self.assertNotIn("curves", self.window._module_buttons)
+        self.assertNotIn("curves", self.controller._catalog)
+        self.assertNotIn("playground", self.controller._catalog)
+
+        # Bézier curve subdivision is inside rasterization
+        self.controller.on_module_selected("rasterization")
+        self.assertFalse(self.window.playground_active())
+        keys = [t.key for t in self.controller._catalog["rasterization"]["items"]]
+        self.assertIn("curve_bezier", keys)
+
+        # Select Bézier Curve Subdivision
+        self.controller.on_topic_selected("curve_bezier")
+        self.assertGreater(len(self.controller.current_steps), 0)
+        rd = self.controller.current_steps[0].render_data
+        self.assertEqual(rd.mode, "curves")
+        self.assertIsNotNone(rd.curve_data)
+        self.assertIn("control_points", rd.curve_data)
+        self.assertIn("subdivision_polygons", self.controller.current_steps[-1].render_data.curve_data)
+        self.assertIn("raster_pixels", self.controller.current_steps[-1].render_data.curve_data)
+        # Consistent rasterization experience: clipping tab bar is hidden
+        self.assertTrue(self.window.clipping_tab_bar.isHidden())
+
+        # Test switching raster algorithm to DDA
+        self.controller.on_parameters_applied({**self.controller.current_parameters, "raster_algorithm": "DDA"})
+        self.assertEqual(self.controller.current_steps[-1].render_data.curve_data["raster_algorithm"], "DDA")
+
+        # Dragging control points updates subdivision in real-time
+        before = self.controller.current_parameters["p1x"]
+        self.controller.on_curve_handle_dragged("P1", 0.25, 3.5)
+        self.assertEqual(self.controller.current_parameters["p1x"], 0.25)
+        self.assertEqual(self.controller.current_parameters["p1y"], 3.5)
+        self.assertNotEqual(before, 0.25)
+        poly = self.controller.current_steps[0].render_data.curve_data["control_points"]
+        self.assertEqual(poly[1], (0.25, 3.5))
+
+        # Visualization widget renders curve mode without errors
+        from PyQt5.QtGui import QPixmap, QPainter
+        pix = QPixmap(600, 400)
+        p = QPainter(pix)
+        try:
+            self.window.visualization_widget.render(p)
+        finally:
+            p.end()
+
+        # Coordinate transforms round-trip correctly
+        sx, sy = self.window.visualization_widget._curve_world_to_screen(2.0, -1.0)
+        wx, wy = self.window.visualization_widget._curve_screen_to_world(sx, sy)
+        self.assertAlmostEqual(wx, 2.0, places=2)
+        self.assertAlmostEqual(wy, -1.0, places=2)
+
+        # Existing clipping still works
+        self.controller.on_module_selected("clipping")
+        self.assertGreater(len(self.controller.current_steps), 0)
+        self.assertEqual(self.controller.current_topic_key, "clip_cohen_sutherland")
+
+    def test_boot_on_learn_studio_gateway(self):
+        self.assertTrue(self.window.home_active())
+        self.assertFalse(self.window.home_host.on_catalog())
+        self.assertTrue(self.window._home_back_btn.isHidden())
+        self.assertTrue(self.window._studio_open_btn.isHidden())
+        self.assertTrue(self.window._nav_pill_bar.isHidden())
+
+    def test_learn_catalog_opens_lesson_workspace(self):
+        self.window.home_host.learnChosen.emit()
+        self.assertTrue(self.window.home_active())
+        self.assertTrue(self.window.home_host.on_catalog())
+        self.assertFalse(self.window._home_back_btn.isHidden())
+        self.assertEqual(self.window._home_back_btn.text(), "←  Home")
+        for expected_cat in ("sorting", "searching", "graphs", "trees", "transformations", "rasterization", "clipping", "theorems"):
+            self.assertIn(expected_cat, self.window._module_buttons)
+            card = self.window._module_buttons[expected_cat]
+            # Verify paint event for card succeeds without throwing
+            card.repaint()
+        self.assertEqual(self.window._module_buttons["transformations"].key, "transformations")
+
+        self.window._module_buttons["sorting"].clicked.emit("sorting")
+        self.assertTrue(self.window.lessons_active())
+        self.assertEqual(self.controller.current_module, "sorting")
+        self.assertGreater(len(self.controller.current_steps), 0)
+        self.assertEqual(self.window._module_chip.text(), "Sorting Algorithms")
+        self.assertFalse(self.window._studio_open_btn.isHidden())
+        self.assertEqual(self.window._home_back_btn.text(), "←  Learn")
+
+        self.window._home_back_btn.click()
+        self.assertTrue(self.window.home_active())
+        self.assertTrue(self.window.home_host.on_catalog())
+
+        self.window._home_back_btn.click()
+        self.assertTrue(self.window.home_active())
+        self.assertFalse(self.window.home_host.on_catalog())
+
+    def test_graphs_in_catalog_and_execution(self):
+        self.controller.on_module_selected("graphs")
+        self.assertEqual(self.window.get_active_renderer(), "2d")
+        keys = [t.key for t in self.controller._catalog["graphs"]["items"]]
+        self.assertEqual(keys, ["prim_mst", "kruskal_mst"])
+        self.assertNotIn("compare_mst", keys)
+        self.assertNotIn("dijkstra_sp", keys)
+        self.assertNotIn("bfs", keys)
+        self.assertNotIn("dfs", keys)
+
+        for topic in keys:
+            self.controller.on_topic_selected(topic)
+            self.assertGreater(len(self.controller.current_steps), 0)
+            step0 = self.controller.current_steps[0]
+            self.assertTrue(hasattr(step0, "title"))
+            self.assertTrue(hasattr(step0, "explanation"))
+            # Step 0 should have concept introduction
+            self.assertTrue("Concept" in step0.title or "Introduction" in step0.title or "BST" in step0.title or "Comparison" in step0.title)
+
+    def test_trees_in_catalog_and_execution(self):
+        self.controller.on_module_selected("trees")
+        self.assertEqual(self.window.get_active_renderer(), "2d")
+        keys = [t.key for t in self.controller._catalog["trees"]["items"]]
+        expected_keys = [
+            "bst_intro", "bst_insert", "bst_search", "bst_delete",
+            "tree_preorder", "tree_inorder", "tree_postorder", "tree_level_order"
+        ]
+        self.assertEqual(keys, expected_keys)
+        self.assertNotIn("bfs", keys)
+        self.assertNotIn("dfs", keys)
+
+        for topic in keys:
+            self.controller.on_topic_selected(topic)
+            self.assertGreater(len(self.controller.current_steps), 0)
+            step0 = self.controller.current_steps[0]
+            self.assertTrue(hasattr(step0, "title"))
+            self.assertTrue(hasattr(step0, "explanation"))
+            self.assertTrue("Concept" in step0.title or "Introduction" in step0.title or "BST" in step0.title)
+
+    def test_searching_in_catalog_and_execution(self):
+        self.controller.on_module_selected("searching")
+        keys = [t.key for t in self.controller._catalog["searching"]["items"]]
+        self.assertEqual(keys, ["linear_search", "binary_search"])
+        for topic in keys:
+            self.controller.on_topic_selected(topic)
+            self.assertGreater(len(self.controller.current_steps), 0)
+
+    def test_transformations_3d_completely_removed(self):
+        self.assertNotIn("transformations_3d", self.controller._catalog)
+        self.assertNotIn("transformations_3d", self.window._module_buttons)
+
+    def test_rast_compare_is_in_catalog(self):
+        self.controller.on_module_selected("rasterization")
+        keys = [t.key for t in self.controller._catalog["rasterization"]["items"]]
+        self.assertIn("rast_compare", keys)
+        self.controller.on_topic_selected("rast_compare")
+        self.assertGreater(len(self.controller.current_steps), 0)
+
+    def test_algorithms_in_catalog(self):
+        self.controller.on_module_selected("algorithms")
+        keys = [t.key for t in self.controller._catalog["algorithms"]["items"]]
+        self.assertNotIn("bfs", keys)
+        self.assertNotIn("dfs", keys)
+        self.assertIn("bubble_sort", keys)
+        self.assertIn("binary_search", keys)
+
+    def test_2d_transformations_in_catalog(self):
+        two_d = [t.key for t in self.controller._catalog["transformations"]["items"]]
+        self.assertEqual(two_d, [
+            "trans_translation",
+            "trans_scaling",
+            "trans_rotation",
+            "trans_pivot_rotation",
+            "trans_reflection",
+            "trans_composite",
+        ])
+        self.assertNotIn("trans3d_translation", two_d)
+
+        self.controller.on_module_selected("transformations")
+        self.assertEqual(self.window.get_active_renderer(), "2d")
+        self.assertEqual(self.controller.current_topic_key, "trans_translation")
+        self.assertGreater(len(self.controller.current_steps), 0)
+
+    def test_studio_proof_builder_tab(self):
+        self.window._on_studio_open()
+        self.assertTrue(self.window.playground_active())
+        self.assertIn("builder", self.window._studio_mode_buttons)
+
+        # Click the Proof Builder mode chip
+        self.window._studio_mode_buttons["builder"].click()
+        self.assertEqual(self.window.playground_host.current_mode(), "builder")
+        ws = self.window.playground_host._ws_builder
+        self.assertIsNotNone(ws)
+        self.assertEqual(ws._mode_stack.currentIndex(), 0)  # Editor mode
 
 
 if __name__ == "__main__":

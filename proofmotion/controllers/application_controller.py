@@ -12,21 +12,24 @@ Coordinates:
   - Synchronized equations, pseudocode, metrics, and explanations
 """
 
-import os
 import random
 from typing import Dict, List, Any, Optional
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from models.theorem_state import Theorem, ParameterSpec, ParameterType, ProofStep
 from core.step_model import VisualizationStep
 from theorems.theorem_engine import TheoremEngine
 from algorithms.algorithm_engine import AlgorithmEngine
+from algorithms.graph_algorithms.prim import prim_trace
+from algorithms.graph_algorithms.kruskal import kruskal_trace
+from algorithms.graph_algorithms.compare_mst import compare_mst_trace
+from algorithms.trees.bst_operations import bst_intro_trace, bst_insert_trace, bst_search_trace, bst_delete_trace
+from algorithms.trees.tree_traversals import preorder_trace, inorder_trace, postorder_trace, level_order_trace
 import cgip.transformations as cgip_trans
 import cgip.rasterization as cgip_rast
 import cgip.clipping as cgip_clip
-import cgip.image_processing as cgip_img
 import cgip.projection_3d as cgip_3d
+import cgip.curves as cgip_curves
 
 
 class ApplicationController(QObject):
@@ -41,14 +44,13 @@ class ApplicationController(QObject):
         self.window = main_window
         self.theorem_engine = engine or TheoremEngine()
 
-        self.current_module = "theorems"
+        self.current_module = "algorithms"
         self.current_topic_key = ""
         self.current_parameters: Dict[str, Any] = {}
         self.current_steps: List[Any] = []
         self.current_step_index = 0
         self.is_playing = False
         self.speed_multiplier = 1.0
-        self._custom_image: Optional[Any] = None
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_step_from_timer)
@@ -56,9 +58,12 @@ class ApplicationController(QObject):
         self._init_module_catalog()
         self._wire_signals()
 
-        # Start on Theorems
-        self.window.select_module("theorems")
-        self.on_module_selected("theorems")
+        # First paint is the Learn / Studio gateway, not a packed lesson
+        if hasattr(self.window, "show_home"):
+            self.window.show_home()
+        else:
+            self.window.select_module("algorithms")
+            self.on_module_selected("algorithms")
 
     # ------------------------------------------------------------------
     # Module & Topic Catalog
@@ -69,6 +74,170 @@ class ApplicationController(QObject):
             "theorems": {
                 "title": "THEOREMS",
                 "items": self.theorem_engine.get_theorems_list(),
+            },
+            "sorting": {
+                "title": "SORTING ALGORITHMS",
+                "items": [
+                    Theorem(
+                        key="bubble_sort",
+                        display_name="Bubble Sort",
+                        short_description="Repeatedly compares and swaps adjacent elements.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="24, 13, 9, 45, 18, 32, 5, 29"),
+                        ]
+                    ),
+                    Theorem(
+                        key="selection_sort",
+                        display_name="Selection Sort",
+                        short_description="Repeatedly selects minimum from unsorted portion.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="29, 10, 14, 37, 13, 2, 40, 25"),
+                        ]
+                    ),
+                    Theorem(
+                        key="insertion_sort",
+                        display_name="Insertion Sort",
+                        short_description="Inserts each element into its sorted place in the prefix.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="31, 41, 59, 26, 41, 58, 12, 35"),
+                        ]
+                    ),
+                    Theorem(
+                        key="merge_sort",
+                        display_name="Merge Sort",
+                        short_description="Divide-and-conquer: divides array into halves and merges.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="38, 27, 43, 3, 9, 82, 10, 19"),
+                        ]
+                    ),
+                    Theorem(
+                        key="quick_sort",
+                        display_name="Quick Sort",
+                        short_description="Partitions array around a pivot element.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="10, 80, 30, 90, 40, 50, 70, 20"),
+                        ]
+                    ),
+                ]
+            },
+            "searching": {
+                "title": "SEARCHING ALGORITHMS",
+                "items": [
+                    Theorem(
+                        key="linear_search",
+                        display_name="Linear Search",
+                        short_description="Sequentially scans array until target is found.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="15, 23, 8, 42, 16, 4, 30, 19"),
+                            ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=42, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="binary_search",
+                        display_name="Binary Search",
+                        short_description="Halves search space on sorted collection.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="4, 8, 15, 16, 23, 30, 42, 55, 68"),
+                            ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=23, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                ]
+            },
+            "graphs": {
+                "title": "GRAPH ALGORITHMS",
+                "items": [
+                    Theorem(
+                        key="prim_mst",
+                        display_name="Prim's MST Algorithm",
+                        short_description="Grows a minimum spanning tree from an initial vertex by repeatedly choosing the minimum-weight connecting edge.",
+                        parameters=[
+                            ParameterSpec("graph_preset", "Preset Graph", ParameterType.CHOICE, default="Network Backbone", choices=["Network Backbone", "Metro Transit", "Simple Diamond", "Custom Graph"]),
+                            ParameterSpec("start_node", "Start Vertex", ParameterType.CHOICE, default="A", choices=["A", "B", "C", "D", "E", "F"]),
+                            ParameterSpec("custom_edges", "Custom Graph (u-v:wt, ...)", ParameterType.TEXT, default=""),
+                        ]
+                    ),
+                    Theorem(
+                        key="kruskal_mst",
+                        display_name="Kruskal's MST Algorithm",
+                        short_description="Greedily adds cheapest edges across graph, rejecting edges that create cycles using Disjoint Set Union.",
+                        parameters=[
+                            ParameterSpec("graph_preset", "Preset Graph", ParameterType.CHOICE, default="Network Backbone", choices=["Network Backbone", "Metro Transit", "Simple Diamond", "Custom Graph"]),
+                            ParameterSpec("custom_edges", "Custom Graph (u-v:wt, ...)", ParameterType.TEXT, default=""),
+                        ]
+                    ),
+                ]
+            },
+            "trees": {
+                "title": "TREES & TRAVERSALS",
+                "items": [
+                    Theorem(
+                        key="bst_intro",
+                        display_name="Introduction to BST",
+                        short_description="Visualizes binary search tree invariant: Left < Root < Right.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                        ]
+                    ),
+                    Theorem(
+                        key="bst_insert",
+                        display_name="BST Insertion",
+                        short_description="Step-by-step navigation and insertion maintaining BST property.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                            ParameterSpec("new_value", "Value to Insert", ParameterType.INTEGER, default=45, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="bst_search",
+                        display_name="BST Searching",
+                        short_description="Binary search in tree comparing target against each node.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                            ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=40, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="bst_delete",
+                        display_name="BST Deletion",
+                        short_description="Handles Leaf, Single-Child, and Two-Children successor replacements.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                            ParameterSpec("delete_value", "Value to Delete", ParameterType.INTEGER, default=30, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="tree_preorder",
+                        display_name="Preorder Traversal",
+                        short_description="Visits nodes in order: Root → Left → Right.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                        ]
+                    ),
+                    Theorem(
+                        key="tree_inorder",
+                        display_name="Inorder Traversal",
+                        short_description="Visits nodes in order: Left → Root → Right (produces sorted keys).",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                        ]
+                    ),
+                    Theorem(
+                        key="tree_postorder",
+                        display_name="Postorder Traversal",
+                        short_description="Visits nodes in order: Left → Right → Root (bottom-up processing).",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                        ]
+                    ),
+                    Theorem(
+                        key="tree_level_order",
+                        display_name="Level Order Traversal",
+                        short_description="Visits nodes level-by-level using a FIFO queue.",
+                        parameters=[
+                            ParameterSpec("keys_input", "Tree Keys (comma-separated)", ParameterType.TEXT, default="50, 30, 70, 20, 40, 60, 80"),
+                        ]
+                    ),
+                ]
             },
             "algorithms": {
                 "title": "ALGORITHMS",
@@ -231,6 +400,35 @@ class ApplicationController(QObject):
                             ParameterSpec("grid_size", "Grid Size", ParameterType.INTEGER, default=22, min_value=10, max_value=40),
                         ]
                     ),
+                    Theorem(
+                        key="rast_compare",
+                        display_name="DDA vs Bresenham",
+                        short_description="Same endpoints, two rasterizers — compare pixels and the decision pendulum.",
+                        parameters=[
+                            ParameterSpec("x0", "Start X₀", ParameterType.INTEGER, default=2, min_value=0, max_value=30),
+                            ParameterSpec("y0", "Start Y₀", ParameterType.INTEGER, default=3, min_value=0, max_value=30),
+                            ParameterSpec("x1", "End X₁", ParameterType.INTEGER, default=17, min_value=0, max_value=30),
+                            ParameterSpec("y1", "End Y₁", ParameterType.INTEGER, default=11, min_value=0, max_value=30),
+                            ParameterSpec("grid_size", "Grid Size", ParameterType.INTEGER, default=20, min_value=10, max_value=40),
+                        ]
+                    ),
+                    Theorem(
+                        key="curve_bezier",
+                        display_name="Bézier Curve Subdivision (De Casteljau's Algorithm)",
+                        short_description="Repeated midpoint interpolation (t = 0.5) splits the curve into flat rasterizable segments.",
+                        parameters=[
+                            ParameterSpec("p0x", "P0 X", ParameterType.LENGTH, default=-5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p0y", "P0 Y", ParameterType.LENGTH, default=-2.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1x", "P1 X", ParameterType.LENGTH, default=-1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p1y", "P1 Y", ParameterType.LENGTH, default=4.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2x", "P2 X", ParameterType.LENGTH, default=1.5, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p2y", "P2 Y", ParameterType.LENGTH, default=-4.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3x", "P3 X", ParameterType.LENGTH, default=5.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("p3y", "P3 Y", ParameterType.LENGTH, default=2.0, min_value=-20.0, max_value=20.0),
+                            ParameterSpec("subdivisions", "Subdivision Depth", ParameterType.INTEGER, default=2, min_value=1, max_value=4),
+                            ParameterSpec("raster_algorithm", "Line Algorithm", ParameterType.CHOICE, default="Bresenham", choices=["Bresenham", "DDA"]),
+                        ]
+                    ),
                 ]
             },
             "clipping": {
@@ -262,74 +460,6 @@ class ApplicationController(QObject):
                             ParameterSpec("ymin", "Win Ymin", ParameterType.LENGTH, default=-2.0, min_value=-20.0, max_value=20.0),
                             ParameterSpec("xmax", "Win Xmax", ParameterType.LENGTH, default=3.0, min_value=-20.0, max_value=20.0),
                             ParameterSpec("ymax", "Win Ymax", ParameterType.LENGTH, default=2.0, min_value=-20.0, max_value=20.0),
-                        ]
-                    ),
-                ]
-            },
-            "image_processing": {
-                "title": "IMAGE PROCESSING",
-                "items": [
-                    Theorem(
-                        key="img_grayscale",
-                        display_name="Grayscale Conversion (Manual)",
-                        short_description="Manual ITU-R BT.601 luma weighting: Y = 0.299R + 0.587G + 0.114B.",
-                        parameters=[
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_threshold",
-                        display_name="Binary Thresholding (Manual)",
-                        short_description="Manual binary segmentation: dst(x,y) = 255 if src(x,y) >= T else 0.",
-                        parameters=[
-                            ParameterSpec("threshold", "Threshold Cutoff", ParameterType.INTEGER, default=128, min_value=0, max_value=255),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_gaussian",
-                        display_name="Gaussian Blurring (Manual 2D)",
-                        short_description="Manual continuous Gaussian kernel generation and 2D spatial convolution.",
-                        parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("sigma", "Sigma (σ)", ParameterType.LENGTH, default=1.5, min_value=0.5, max_value=10.0),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_mean",
-                        display_name="Mean Box Filter (Manual)",
-                        short_description="Uniform spatial low-pass filter computing local neighborhood average.",
-                        parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_median",
-                        display_name="Median Filter (Manual)",
-                        short_description="Manual non-linear spatial filter removing salt-and-pepper impulse noise.",
-                        parameters=[
-                            ParameterSpec("kernel_size", "Kernel Size", ParameterType.INTEGER, default=5, min_value=3, max_value=25),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="salt_and_pepper", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_sobel",
-                        display_name="Sobel Edge Detection (Manual)",
-                        short_description="Manual Gx, Gy convolution kernels and gradient magnitude sqrt(Gx² + Gy²).",
-                        parameters=[
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
-                        ]
-                    ),
-                    Theorem(
-                        key="img_canny",
-                        display_name="Canny Edge Detection (OpenCV Reference)",
-                        short_description="Multi-stage hysteresis edge detection (OpenCV reference comparison).",
-                        parameters=[
-                            ParameterSpec("low_threshold", "Low Threshold", ParameterType.INTEGER, default=50, min_value=0, max_value=255),
-                            ParameterSpec("high_threshold", "High Threshold", ParameterType.INTEGER, default=150, min_value=0, max_value=255),
-                            ParameterSpec("pattern", "Test Pattern", ParameterType.CHOICE, default="shapes", choices=["shapes", "checkerboard", "salt_and_pepper", "gradient"]),
                         ]
                     ),
                 ]
@@ -399,6 +529,8 @@ class ApplicationController(QObject):
     def _wire_signals(self):
         w = self.window
         w.moduleSelected.connect(self.on_module_selected)
+        if hasattr(w, "homeRequested"):
+            w.homeRequested.connect(self.on_home_requested)
         w.theorem_panel.theoremSelected.connect(self.on_topic_selected)
         w.parameter_panel.parametersApplied.connect(self.on_parameters_applied)
 
@@ -414,43 +546,70 @@ class ApplicationController(QObject):
         w.view_controls.resetViewClicked.connect(self.on_reset_view)
         w.view_controls.panRequested.connect(self.on_pan_requested)
         w.view_controls.gridToggled.connect(self.on_grid_toggled)
-        w.view_controls.openImageClicked.connect(self.on_open_image)
-        w.view_controls.saveImageClicked.connect(self.on_save_image)
-        w.view_controls.resetImageClicked.connect(self.on_reset_image)
 
         w.visualization_widget.clippingEndpointDragged.connect(self.on_clipping_endpoint_dragged)
         w.visualization_widget.clippingRegionClicked.connect(self.on_clipping_region_clicked)
+        w.visualization_widget.curveHandleDragged.connect(self.on_curve_handle_dragged)
         if hasattr(w, "clipping_tab_bar"):
             w.clipping_tab_bar.tabChanged.connect(self.on_clipping_tab_changed)
+        if hasattr(w.parameter_panel, "curveTChanged"):
+            w.parameter_panel.curveTChanged.connect(self.on_curve_t_changed)
 
     # ------------------------------------------------------------------
     # Module & Topic Selection
     # ------------------------------------------------------------------
+    def on_home_requested(self):
+        self._stop_playback()
+        if self.current_module == "playground":
+            self.current_module = self.window._last_lesson_module or "algorithms"
+
     def on_module_selected(self, module_key: str):
         self._stop_playback()
         self.current_module = module_key
+
+        if module_key != "playground" and hasattr(self.window, "select_module"):
+            self.window.select_module(module_key)
+
+        if module_key == "playground":
+            if hasattr(self.window, "show_playground"):
+                self.window.show_playground()
+            self.window.set_status("Studio — not a lesson. Draw, transform, and watch the matrix follow.")
+            return
+
+        if hasattr(self.window, "show_lessons"):
+            self.window.show_lessons()
+
         mod_info = self._catalog.get(module_key)
         if not mod_info:
             return
 
-        # Dual renderer selection: 3D Projections uses OpenGL, others use QPainter
+        # Dual renderer selection: 3D lessons use OpenGL, others use QPainter
         if module_key == "projections_3d":
             self.window.set_active_renderer("opengl")
         else:
             self.window.set_active_renderer("2d")
+            if hasattr(self.window, "opengl_widget"):
+                self.window.opengl_widget.set_scene_objects(None)
+                self.window.opengl_widget.set_overlay_lines([])
+                self.window.opengl_widget.set_overlay_plane_y(None)
+                if hasattr(self.window.opengl_widget, "set_overlay_plane"):
+                    self.window.opengl_widget.set_overlay_plane(None)
+                if hasattr(self.window.opengl_widget, "set_lesson_caption"):
+                    self.window.opengl_widget.set_lesson_caption("")
 
-        # Toggle Image Studio action toolbar
+        # Toggle Zoom controls: hidden in sorting and searching, visible in graphs, trees, and other lessons
+        is_linear_algo = (module_key in ("algorithms", "sorting", "searching"))
+        is_graph_or_tree = (module_key in ("graphs", "trees"))
         if hasattr(self.window, "view_controls"):
-            self.window.view_controls.set_image_mode(module_key == "image_processing")
-
-        # Toggle Zoom controls: hidden in algorithms section, visible in all others
-        is_algorithms = (module_key == "algorithms")
+            self.window.view_controls.set_grid_control_visible(
+                module_key not in ("sorting", "algorithms", "graphs", "searching", "trees")
+            )
         if hasattr(self.window, "set_zoom_controls_visible"):
-            self.window.set_zoom_controls_visible(not is_algorithms)
+            self.window.set_zoom_controls_visible(not is_linear_algo, show_pan=(not is_graph_or_tree))
         elif hasattr(self.window, "view_controls") and hasattr(self.window.view_controls, "set_zoom_controls_visible"):
-            self.window.view_controls.set_zoom_controls_visible(not is_algorithms)
+            self.window.view_controls.set_zoom_controls_visible(not is_linear_algo, show_pan=(not is_graph_or_tree))
 
-        if is_algorithms and hasattr(self.window, "visualization_widget"):
+        if is_linear_algo and hasattr(self.window, "visualization_widget"):
             self.window.visualization_widget.reset_view()
 
         items = mod_info["items"]
@@ -468,6 +627,12 @@ class ApplicationController(QObject):
             return
 
         if self.current_module == "projections_3d":
+            if hasattr(self.window, "opengl_widget"):
+                self.window.opengl_widget.set_scene_objects(None)
+                if hasattr(self.window.opengl_widget, "set_overlay_plane"):
+                    self.window.opengl_widget.set_overlay_plane(None)
+                if hasattr(self.window.opengl_widget, "set_lesson_caption"):
+                    self.window.opengl_widget.set_lesson_caption("")
             if topic_key == "proj_cube_persp":
                 self.window.opengl_widget.set_object_type("cube")
                 self.window.opengl_widget.set_projection_mode("perspective")
@@ -486,21 +651,26 @@ class ApplicationController(QObject):
         self.window.set_status(f"Loaded: {item.display_name} — {item.short_description}")
         self.theoremChanged.emit(topic_key)
 
-        # Toggle Zoom controls: hidden in algorithms section
-        is_algorithms = (self.current_module == "algorithms")
+        # Toggle Zoom controls: hidden in sorting and searching, visible in graphs, trees, and other lessons
+        is_linear_algo = (self.current_module in ("algorithms", "sorting", "searching"))
+        is_graph_or_tree = (self.current_module in ("graphs", "trees"))
+        if hasattr(self.window, "view_controls"):
+            self.window.view_controls.set_grid_control_visible(
+                self.current_module not in ("sorting", "algorithms", "graphs", "searching", "trees")
+            )
         if hasattr(self.window, "set_zoom_controls_visible"):
-            self.window.set_zoom_controls_visible(not is_algorithms)
+            self.window.set_zoom_controls_visible(not is_linear_algo, show_pan=(not is_graph_or_tree))
         elif hasattr(self.window, "view_controls") and hasattr(self.window.view_controls, "set_zoom_controls_visible"):
-            self.window.view_controls.set_zoom_controls_visible(not is_algorithms)
+            self.window.view_controls.set_zoom_controls_visible(not is_linear_algo, show_pan=(not is_graph_or_tree))
 
         # Toggle Animated Sorting Playground Style Controls
-        is_sorting = (self.current_module == "algorithms" and topic_key in (
+        is_sorting = (self.current_module in ("sorting", "algorithms") and topic_key in (
             "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"
         ))
         if hasattr(self.window, "set_sorting_controls_visible"):
             self.window.set_sorting_controls_visible(is_sorting)
 
-        # Toggle clipping lesson tabs for Cohen–Sutherland and Sutherland–Hodgman
+        # Toggle lesson tabs for clipping (Cohen-Sutherland and Sutherland-Hodgman)
         is_cohen = (topic_key == "clip_cohen_sutherland")
         is_hodgman = (topic_key == "clip_sutherland_hodgman")
         if hasattr(self.window, "set_clipping_tabs_visible"):
@@ -518,6 +688,8 @@ class ApplicationController(QObject):
                     self.window.parameter_panel.set_clipping_lesson_tab("four_cases")
                 else:
                     self.window.parameter_panel.set_clipping_lesson_tab("")
+            if hasattr(self.window.parameter_panel, "set_curve_lesson_tab"):
+                self.window.parameter_panel.set_curve_lesson_tab("", "")
 
         # Apply default parameters
         defaults = {p.key: p.default for p in item.parameters}
@@ -554,10 +726,10 @@ class ApplicationController(QObject):
                 raise ValueError(msg)
             return self.theorem_engine.generate_steps(key, values)
 
-        # 2. Algorithms
-        elif self.current_module == "algorithms":
+        # 2. Sorting & Searching (and legacy algorithms alias)
+        elif self.current_module in ("sorting", "searching", "algorithms"):
             # Parse array
-            raw_arr = values.get("array_input", "10, 5, 20, 8")
+            raw_arr = values.get("array_input", "10, 5, 20, 8" if self.current_module != "searching" else "4, 8, 15, 16, 23, 30, 42, 55, 68")
             try:
                 arr = [int(x.strip()) for x in str(raw_arr).split(",") if x.strip()]
             except ValueError:
@@ -571,7 +743,42 @@ class ApplicationController(QObject):
                 target = int(values.get("target", 23))
                 return AlgorithmEngine.run_searching(key, arr, target)
 
-        # 3. Transformations
+        # 3. Graph Algorithms
+        elif self.current_module == "graphs":
+            preset = values.get("graph_preset", "Network Backbone")
+            custom = values.get("custom_edges", "")
+            if key == "prim_mst":
+                start_node = str(values.get("start_node", "A"))
+                return prim_trace(preset, start_node=start_node, custom_edges=custom)
+            elif key == "kruskal_mst":
+                return kruskal_trace(preset, custom_edges=custom)
+            elif key == "compare_mst":
+                return compare_mst_trace(preset, custom_edges=custom)
+
+        # 4. Trees & Traversals
+        elif self.current_module == "trees":
+            keys_input = values.get("keys_input", "50, 30, 70, 20, 40, 60, 80")
+            if key == "bst_intro":
+                return bst_intro_trace(keys_input)
+            elif key == "bst_insert":
+                new_val = int(values.get("new_value", 45))
+                return bst_insert_trace(keys_input, new_val)
+            elif key == "bst_search":
+                target = int(values.get("target", 40))
+                return bst_search_trace(keys_input, target)
+            elif key == "bst_delete":
+                del_val = int(values.get("delete_value", 30))
+                return bst_delete_trace(keys_input, del_val)
+            elif key == "tree_preorder":
+                return preorder_trace(keys_input)
+            elif key == "tree_inorder":
+                return inorder_trace(keys_input)
+            elif key == "tree_postorder":
+                return postorder_trace(keys_input)
+            elif key == "tree_level_order":
+                return level_order_trace(keys_input)
+
+        # 5. Transformations
         elif self.current_module == "transformations":
             if key == "trans_translation":
                 dx = float(values.get("dx", 3.0))
@@ -642,6 +849,14 @@ class ApplicationController(QObject):
                 y1 = int(values.get("y1", 11))
                 gs = int(values.get("grid_size", 20))
                 return cgip_rast.dda_vs_bresenham_comparison_trace(x0, y0, x1, y1, grid_size=gs)
+            elif key in ("curve_bezier", "rast_bezier"):
+                p0 = (float(values.get("p0x", -6.0)), float(values.get("p0y", -3.0)))
+                p1 = (float(values.get("p1x", -3.0)), float(values.get("p1y", 5.0)))
+                p2 = (float(values.get("p2x", 3.0)), float(values.get("p2y", 5.0)))
+                p3 = (float(values.get("p3x", 6.0)), float(values.get("p3y", -3.0)))
+                depth = int(values.get("subdivisions", 2))
+                algo = str(values.get("raster_algorithm", "Bresenham"))
+                return cgip_curves.bezier_subdivision_steps([p0, p1, p2, p3], depth=depth, algorithm=algo)
 
         # 5. Clipping
         elif self.current_module == "clipping":
@@ -675,18 +890,7 @@ class ApplicationController(QObject):
                 y2 = float(values.get("y2", -2.0))
                 return cgip_clip.cohen_sutherland_trace(x1, y1, x2, y2, xmin, ymin, xmax, ymax)
 
-        # 6. Image Processing
-        elif self.current_module == "image_processing":
-            if self._custom_image is not None:
-                img_np = self._custom_image.copy()
-            else:
-                pattern = str(values.get("pattern", "shapes"))
-                img_np = cgip_img.generate_synthetic_image(pattern, size=300)
-            op = key.replace("img_", "")
-            step = cgip_img.build_image_step(img_np, op, values)
-            return [step]
-
-        # 7. 3D Projections
+        # 6. 3D Projections
         elif self.current_module == "projections_3d":
             rx = float(values.get("rx", 25.0))
             ry = float(values.get("ry", 35.0))
@@ -736,13 +940,26 @@ class ApplicationController(QObject):
             step_idx_1based, total, eq, expl, metrics=metrics, title=title
         )
         self.window.visualization_widget.update_step(idx, vals, render_data=rd)
+
+        # Synchronize 3D OpenGL scene objects and overlays when active
+        if self.current_module == "projections_3d" and hasattr(self.window, "opengl_widget"):
+            scene_objs = vals.get("scene_objects")
+            if scene_objs is not None:
+                self.window.opengl_widget.set_scene_objects(scene_objs)
+            overlay_plane = vals.get("overlay_plane")
+            if hasattr(self.window.opengl_widget, "set_overlay_plane"):
+                self.window.opengl_widget.set_overlay_plane(overlay_plane)
+            caption = vals.get("lesson_caption", "")
+            if hasattr(self.window.opengl_widget, "set_lesson_caption"):
+                self.window.opengl_widget.set_lesson_caption(caption)
+
         self.window.animation_controls.set_progress(idx + 1, total)
         self.window.animation_controls.set_step_buttons_enabled(
             prev_enabled=idx > 0, next_enabled=idx < total - 1
         )
         self.stepChanged.emit(idx, total)
 
-        # Update live lesson card for clipping topics
+        # Update live lesson card for clipping and curve topics
         if self.current_topic_key in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
             tab = ""
             if hasattr(self.window, "clipping_tab_bar"):
@@ -750,6 +967,14 @@ class ApplicationController(QObject):
             if hasattr(self.window.parameter_panel, "set_clipping_lesson_tab"):
                 self.window.parameter_panel.set_clipping_lesson_tab(tab)
             self.window.parameter_panel.update_clipping_walkthrough(vals)
+        elif self.current_topic_key in ("curve_bezier", "curve_bspline", "curve_hermite"):
+            tab = ""
+            if hasattr(self.window, "clipping_tab_bar"):
+                tab = self.window.clipping_tab_bar.current_tab()
+            if hasattr(self.window.parameter_panel, "set_curve_lesson_tab"):
+                self.window.parameter_panel.set_curve_lesson_tab(self.current_topic_key, tab)
+            if hasattr(self.window.parameter_panel, "update_curve_walkthrough"):
+                self.window.parameter_panel.update_curve_walkthrough(vals)
 
         # If on the last step of a theorem or clipping, show verified result
         if idx == total - 1 and self.current_module == "theorems":
@@ -771,6 +996,66 @@ class ApplicationController(QObject):
                 )
             elif vals.get("status") == "rejected":
                 self.window.equation_panel.display_result("Rejected: polygon lies entirely outside the clipping window")
+        elif self.current_topic_key in ("curve_bezier", "rast_bezier"):
+            sub_count = vals.get("subdivision_count")
+            pt = vals.get("curve_point")
+            tot_px = vals.get("total_pixels") or vals.get("plotted_pixels_count")
+            algo_used = vals.get("algorithm", "Rasterizer")
+            if vals.get("stage") == "complete" or (idx == total - 1 and tot_px):
+                self.window.equation_panel.display_result(
+                    f"Rasterization Complete: {tot_px} pixels plotted via {algo_used} line algorithm."
+                )
+            elif vals.get("stage") == "rasterizing" and tot_px:
+                self.window.equation_panel.display_result(
+                    f"Rasterizing via {algo_used}: {tot_px} pixel(s) plotted on grid"
+                )
+            elif sub_count is not None and (idx == total - 1 or idx >= 4):
+                self.window.equation_panel.display_result(
+                    f"Subdivision: {sub_count} segment(s) formed via De Casteljau midpoints"
+                )
+            elif pt:
+                self.window.equation_panel.display_result(
+                    f"Midpoint C(0.5) = ({pt[0]:.2f}, {pt[1]:.2f})"
+                )
+        elif idx == total - 1 and self.current_module == "graphs":
+            mst_weight = metrics.get("Total Weight") or vals.get("final_weight") or ""
+            edges_count = metrics.get("MST Edges") or vals.get("mst_edges_count") or ""
+            if self.current_topic_key in ("prim_mst", "kruskal_mst"):
+                self.window.equation_panel.display_result(
+                    f"✔ Minimum Spanning Tree Complete: Total Weight = {mst_weight} across {edges_count} edges."
+                )
+            elif self.current_topic_key == "compare_mst":
+                self.window.equation_panel.display_result(
+                    f"✔ MST Equivalence Verified: Both Prim and Kruskal produced identical weight = {mst_weight}."
+                )
+        elif idx == total - 1 and self.current_module == "trees":
+            if self.current_topic_key.startswith("tree_"):
+                seq = vals.get("final_sequence") or vals.get("traversal_sequence")
+                if not seq and rd and rd.tree_data:
+                    seq = rd.tree_data.get("sequence", [])
+                if seq:
+                    self.window.equation_panel.display_result(
+                        f"✔ Traversal Complete: Sequence = {' → '.join(str(x) for x in seq)}"
+                    )
+                else:
+                    self.window.equation_panel.display_result("✔ Traversal Complete!")
+            elif self.current_topic_key == "bst_search":
+                found = vals.get("found", False)
+                tgt = vals.get("target", "")
+                status_str = "Found in BST" if found else "Not found in BST"
+                self.window.equation_panel.display_result(
+                    f"Search Complete: Target {tgt} {status_str}."
+                )
+            elif self.current_topic_key == "bst_insert":
+                val = vals.get("new_value", "")
+                self.window.equation_panel.display_result(
+                    f"Insertion Complete: Value {val} added preserving BST ordering."
+                )
+            elif self.current_topic_key == "bst_delete":
+                val = vals.get("delete_value", "")
+                self.window.equation_panel.display_result(
+                    f"Deletion Complete: Value {val} removed from BST."
+                )
 
     def on_clipping_endpoint_dragged(self, target: str, x: float, y: float):
         """Handle real-time endpoint dragging on the canvas."""
@@ -795,9 +1080,11 @@ class ApplicationController(QObject):
         self._render_current_step()
 
     def on_clipping_tab_changed(self, tab_key: str):
-        """Switch lesson tabs for Cohen–Sutherland or Sutherland–Hodgman."""
+        """Switch lesson tabs for clipping topics."""
         if self.current_topic_key not in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
             return
+        if hasattr(self.window, "clipping_tab_bar"):
+            self.window.clipping_tab_bar.set_current_tab(tab_key, emit_signal=False)
         self._stop_playback()
         p = self.current_parameters
         xmin = float(p.get("xmin", -3.0))
@@ -845,6 +1132,36 @@ class ApplicationController(QObject):
             if s.values.get("lesson") == "region" and s.values.get("active_code") == code:
                 self.current_step_index = idx
                 break
+        self._render_current_step()
+
+    def on_curve_handle_dragged(self, handle: str, x: float, y: float):
+        """Live-update a control point from canvas dragging for Bézier subdivision."""
+        if self.current_topic_key not in ("curve_bezier", "rast_bezier"):
+            return
+        p = self.current_parameters
+        if handle.startswith("P") and handle[1:].isdigit():
+            idx = handle[1:]
+            p[f"p{idx}x"] = x
+            p[f"p{idx}y"] = y
+            self.window.parameter_panel.set_input_value(f"p{idx}x", x)
+            self.window.parameter_panel.set_input_value(f"p{idx}y", y)
+        else:
+            return
+
+        self._stop_playback()
+        self.current_steps = cgip_curves.generate_curve_steps(self.current_topic_key, p)
+        self.current_step_index = min(self.current_step_index, max(0, len(self.current_steps) - 1))
+        self._render_current_step()
+
+    def on_curve_t_changed(self, value: float):
+        """Seek parameter slider without resetting."""
+        if self.current_topic_key not in ("curve_bezier", "rast_bezier"):
+            return
+        self.current_parameters["t"] = float(value)
+        self.window.parameter_panel.set_input_value("t", float(value))
+        self._stop_playback()
+        self.current_steps = cgip_curves.generate_curve_steps(self.current_topic_key, self.current_parameters)
+        self.current_step_index = min(self.current_step_index, max(0, len(self.current_steps) - 1))
         self._render_current_step()
 
     def on_step_selected(self, step_index: int):
@@ -925,7 +1242,7 @@ class ApplicationController(QObject):
     # View Navigation (Zoom, Pan, Reset)
     # ------------------------------------------------------------------
     def on_zoom_in(self):
-        if self.current_module == "algorithms":
+        if self.current_module in ("algorithms", "sorting", "searching"):
             return
         if self.current_module == "projections_3d" and hasattr(self.window, "opengl_widget"):
             self.window.opengl_widget.zoom_in()
@@ -935,7 +1252,7 @@ class ApplicationController(QObject):
             )
 
     def on_zoom_out(self):
-        if self.current_module == "algorithms":
+        if self.current_module in ("algorithms", "sorting", "searching"):
             return
         if self.current_module == "projections_3d" and hasattr(self.window, "opengl_widget"):
             self.window.opengl_widget.zoom_out()
@@ -959,59 +1276,3 @@ class ApplicationController(QObject):
     def on_grid_toggled(self, checked: bool):
         if hasattr(self.window, "opengl_widget"):
             self.window.opengl_widget.set_show_grid(checked)
-
-    # ------------------------------------------------------------------
-    # Image Studio Controls
-    # ------------------------------------------------------------------
-    def on_open_image(self):
-        filepath, _ = QFileDialog.getOpenFileName(
-            self.window,
-            "Select Input Image",
-            "",
-            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)"
-        )
-        if not filepath:
-            return
-
-        try:
-            img = cgip_img.load_image(filepath)
-            self._custom_image = img
-            self.on_parameters_applied(self.current_parameters)
-            if hasattr(self.window, "set_status"):
-                self.window.set_status(f"Loaded image: {os.path.basename(filepath)} ({img.shape[1]}×{img.shape[0]} px)")
-        except Exception as e:
-            QMessageBox.critical(self.window, "Image Load Error", f"Failed to load image:\n{str(e)}")
-
-    def on_save_image(self):
-        if not self.current_steps or self.current_step_index >= len(self.current_steps):
-            QMessageBox.warning(self.window, "Save Result", "No processed image available to save.")
-            return
-
-        curr_step = self.current_steps[self.current_step_index]
-        vals = getattr(curr_step, "values", {})
-        proc_arr = vals.get("processed_array")
-        if proc_arr is None:
-            QMessageBox.warning(self.window, "Save Result", "No processed image array found in current step.")
-            return
-
-        filepath, _ = QFileDialog.getSaveFileName(
-            self.window,
-            "Save Processed Image",
-            "processed_output.png",
-            "PNG Image (*.png);;JPEG Image (*.jpg);;BMP Image (*.bmp);;All Files (*)"
-        )
-        if not filepath:
-            return
-
-        try:
-            cgip_img.save_image(filepath, proc_arr)
-            if hasattr(self.window, "set_status"):
-                self.window.set_status(f"Saved processed image to: {os.path.basename(filepath)}")
-        except Exception as e:
-            QMessageBox.critical(self.window, "Image Save Error", f"Failed to save image:\n{str(e)}")
-
-    def on_reset_image(self):
-        self._custom_image = None
-        self.on_parameters_applied(self.current_parameters)
-        if hasattr(self.window, "set_status"):
-            self.window.set_status("Restored default synthetic test pattern.")

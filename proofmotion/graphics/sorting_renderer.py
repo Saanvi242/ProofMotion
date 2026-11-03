@@ -3,14 +3,12 @@ graphics/sorting_renderer.py
 ----------------------------
 Modular rendering engine for the ProofMotion Animated Sorting Playground.
 
-Supports 4 distinct visual styles:
-  1. Bouncing Balls — 3D shaded spheres traversing parabolic arcs with landing squashing and comparison halos.
-  2. Floating Cubes — Isometric 3D cubes with lift, translate, and magnetic settling.
-  3. Marble Sorting Machine — Physical track rails, slot cradles, comparator gates, and hopper chutes.
-  4. Conventional Bars — Clean, high-contrast fallback bar charts.
-
-Handles smooth interpolation (t in [0.0, 1.0]) with non-overlapping trajectory arcs
-and reduced-motion accessibility mode.
+Each visual style has its own kinematics in graphics.sorting_motion:
+  1. Bouncing Balls — hop on parabolic arcs and squash on landing.
+  2. Floating Cubes — lift, turn, slide, then settle.
+  3. Marble Track — roll along the rail with visible rotation; never fly.
+  4. Toy Cars — accelerate, change lanes to pass, and brake into place.
+  5. Bars — grounded horizontal slides and height pulses.
 """
 
 import math
@@ -24,6 +22,7 @@ from PyQt5.QtGui import (
 
 from resources.theme import COLORS, get_ui_font, get_mono_font
 from algorithms.sorting.sorting_events import SortEvent, SortEventType
+from graphics.sorting_motion import motion_for, MotionPose
 
 
 class SortingPlaygroundRenderer:
@@ -160,10 +159,6 @@ class SortingPlaygroundRenderer:
             "tag": tag
         }
 
-    def _ease(self, t: float) -> float:
-        t = min(1.0, max(0.0, t))
-        return 0.5 - 0.5 * math.cos(math.pi * t)
-
     def _swap_pair(self, sort_event: Optional[SortEvent]) -> Optional[Tuple[int, int]]:
         if not sort_event:
             return None
@@ -173,36 +168,11 @@ class SortingPlaygroundRenderer:
             return (sort_event.indices[0], sort_event.indices[1])
         return None
 
-    def _animated_xy(self, i: int, centers: List[float], base_y: float,
-                     sort_event: Optional[SortEvent], t: float) -> Tuple[float, float]:
-        """Shared swap / shift / merge motion so every style follows the real event."""
-        x, y = centers[i], base_y
-        if self.reduced_motion or not sort_event:
-            return x, y
-        ease = self._ease(t)
-        n = len(centers)
-
-        swap_pair = self._swap_pair(sort_event)
-        if swap_pair and i in swap_pair:
-            other = swap_pair[1] if i == swap_pair[0] else swap_pair[0]
-            if 0 <= other < n:
-                x = centers[other] + (centers[i] - centers[other]) * ease
-                arc = max(48.0, abs(centers[i] - centers[other]) * 0.42)
-                leap = 4.0 * arc * ease * (1.0 - ease)
-                y = base_y - leap if i == min(swap_pair) else base_y + leap * 0.38
-            return x, y
-
-        if sort_event.event_type == SortEventType.SHIFT and sort_event.moving_index is not None \
-                and sort_event.target_index is not None and i == sort_event.target_index:
-            src = sort_event.moving_index
-            if 0 <= src < n:
-                x = centers[src] + (centers[i] - centers[src]) * ease
-                y = base_y - 4.0 * 28.0 * ease * (1.0 - ease)
-            return x, y
-
-        if sort_event.event_type == SortEventType.MERGE_WRITE and sort_event.target_index == i:
-            y = base_y - (1.0 - ease) * 42.0
-        return x, y
+    def _pose(self, i: int, centers: List[float], base_y: float,
+              sort_event: Optional[SortEvent], t: float, radius: float = 20.0) -> MotionPose:
+        return motion_for(self.style).pose(
+            i, centers, base_y, sort_event, t, self.reduced_motion, radius
+        )
 
     def _draw_event_caption(self, painter: QPainter, width: int, height: int, sort_event: SortEvent):
         text = sort_event.description
@@ -289,15 +259,9 @@ class SortingPlaygroundRenderer:
             val = values[i]
             state = self._get_element_state(i, sort_event, bars)
 
-            cur_x, cur_y = self._animated_xy(i, centers, base_y, sort_event, t)
-            scale_x, scale_y = 1.0, 1.0
-
-            if swap_pair and i in swap_pair and not self.reduced_motion and t > 0.82:
-                bounce_prog = (t - 0.82) / 0.18
-                decay = 1.0 - bounce_prog
-                squash = math.sin(bounce_prog * math.pi) * 0.22 * decay
-                scale_x = 1.0 + squash
-                scale_y = 1.0 - squash
+            pose = self._pose(i, centers, base_y, sort_event, t, radius)
+            cur_x, cur_y = pose.x, pose.y
+            scale_x, scale_y = pose.scale_x, pose.scale_y
 
             # Draw Ground Drop Shadow (scales with elevation)
             elevation = max(0.0, base_y - cur_y)
@@ -427,20 +391,14 @@ class SortingPlaygroundRenderer:
         painter.drawLine(QPointF(centers[0] - slot_w * 0.4, base_y + cube_s * 0.8),
                          QPointF(centers[-1] + slot_w * 0.4, base_y + cube_s * 0.8))
 
-        # Active swap pair
-        swap_pair = None
-        if sort_event and sort_event.swapping_indices:
-            swap_pair = sort_event.swapping_indices
-        elif sort_event and sort_event.event_type == SortEventType.SWAP and len(sort_event.indices) >= 2:
-            swap_pair = (sort_event.indices[0], sort_event.indices[1])
-
         # Render each cube with 3 isometric faces
         for i in range(n):
             val = values[i]
             state = self._get_element_state(i, sort_event, bars)
 
-            cx, cy = self._animated_xy(i, centers, base_y, sort_event, t)
-            lift = base_y - cy
+            pose = self._pose(i, centers, base_y, sort_event, t, cube_s * 0.5)
+            cx, cy = pose.x, pose.y
+            lift = pose.lift if pose.lift else max(0.0, base_y - cy)
 
             # Ground shadow
             shadow_w = cube_s * 1.2
@@ -449,6 +407,11 @@ class SortingPlaygroundRenderer:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(QColor(20, 30, 55, shadow_alpha)))
             painter.drawEllipse(QRectF(cx - shadow_w / 2.0, base_y + cube_s * 0.7 - shadow_h / 2.0, shadow_w, shadow_h))
+
+            painter.save()
+            painter.translate(cx, cy)
+            painter.rotate(pose.tilt_deg + pose.rotation_deg * 0.18)
+            painter.translate(-cx, -cy)
 
             # Isometric cube geometry
             s = cube_s * 0.5
@@ -510,6 +473,7 @@ class SortingPlaygroundRenderer:
             painter.setFont(get_mono_font(max(11, int(s * 0.7)), weight=700))
             painter.setPen(QPen(QColor("#FFFFFF")))
             painter.drawText(QRectF(cx - dx, cy - dy, dx * 2, s * 1.5), Qt.AlignCenter, str(val))
+            painter.restore()
 
             # Minimum / Pivot crown indicator
             if state["min"]:
@@ -582,13 +546,18 @@ class SortingPlaygroundRenderer:
             val = values[i]
             state = self._get_element_state(i, sort_event, bars)
 
-            cur_x, cur_y = self._animated_xy(i, centers, base_y, sort_event, t)
+            pose = self._pose(i, centers, base_y, sort_event, t, radius)
+            cur_x, cur_y = pose.x, pose.y
+
+            painter.save()
+            painter.translate(cur_x, cur_y)
+            painter.rotate(pose.rotation_deg)
 
             # Glass marble with colorful core swirl
-            marble_rect = QRectF(cur_x - radius, cur_y - radius, radius * 2, radius * 2)
+            marble_rect = QRectF(-radius, -radius, radius * 2, radius * 2)
 
             # Marble outer glass gradient
-            glass_grad = QRadialGradient(cur_x - radius * 0.35, cur_y - radius * 0.35, radius * 1.3)
+            glass_grad = QRadialGradient(-radius * 0.35, -radius * 0.35, radius * 1.3)
             glass_grad.setColorAt(0.0, QColor(255, 255, 255, 240))
             glass_grad.setColorAt(0.4, QColor(241, 245, 249, 180))
             glass_grad.setColorAt(0.85, QColor(148, 163, 184, 210))
@@ -613,19 +582,31 @@ class SortingPlaygroundRenderer:
             else:
                 core_c = QColor("#0EA5E9")
 
-            core_grad = QRadialGradient(cur_x - core_r * 0.2, cur_y - core_r * 0.2, core_r)
+            core_grad = QRadialGradient(-core_r * 0.2, -core_r * 0.2, core_r)
             core_grad.setColorAt(0.0, core_c.lighter(130))
             core_grad.setColorAt(1.0, core_c.darker(120))
 
             painter.setBrush(QBrush(core_grad))
             painter.setPen(Qt.NoPen)
-            painter.drawEllipse(QRectF(cur_x - core_r, cur_y - core_r, core_r * 2, core_r * 2))
+            painter.drawEllipse(QRectF(-core_r, -core_r, core_r * 2, core_r * 2))
 
-            # Numeric Value
+            # Rolling stripe so rotation is visible
+            painter.setBrush(QBrush(QColor(255, 255, 255, 70)))
+            painter.drawEllipse(QRectF(-radius * 0.18, -radius * 0.72, radius * 0.36, radius * 0.28))
+            stripe = QPainterPath()
+            stripe.moveTo(-radius * 0.55, -radius * 0.15)
+            stripe.quadTo(0, radius * 0.08, radius * 0.55, -radius * 0.1)
+            painter.setPen(QPen(QColor(255, 255, 255, 90), max(2.0, radius * 0.12), Qt.SolidLine, Qt.RoundCap))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(stripe)
+
+            # Numeric Value stays upright
+            painter.rotate(-pose.rotation_deg)
             font_size = max(10, int(diam * 0.3))
             painter.setFont(get_mono_font(font_size, weight=700))
             painter.setPen(QPen(QColor("#FFFFFF")))
-            painter.drawText(marble_rect, Qt.AlignCenter, str(val))
+            painter.drawText(QRectF(-radius, -radius, radius * 2, radius * 2), Qt.AlignCenter, str(val))
+            painter.restore()
 
             # Index label below
             painter.setFont(get_mono_font(12, weight=500))
@@ -650,17 +631,25 @@ class SortingPlaygroundRenderer:
         painter.setRenderHint(QPainter.Antialiasing, True)
 
         road_y = base_y + car_h * 0.35
+        road_x = centers[0] - slot_w * 0.55
+        road_w = centers[-1] - centers[0] + slot_w * 1.1
         painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#94A3B8")))
+        painter.drawRoundedRect(QRectF(road_x, road_y - 22, road_w, 18), 8, 8)
         painter.setBrush(QBrush(QColor("#CBD5E1")))
-        painter.drawRoundedRect(QRectF(centers[0] - slot_w * 0.55, road_y, centers[-1] - centers[0] + slot_w * 1.1, 16), 8, 8)
+        painter.drawRoundedRect(QRectF(road_x, road_y, road_w, 16), 8, 8)
         painter.setPen(QPen(QColor("#F8FAFC"), 2, Qt.DashLine))
         painter.drawLine(QPointF(centers[0] - slot_w * 0.3, road_y + 8),
                          QPointF(centers[-1] + slot_w * 0.3, road_y + 8))
+        painter.setPen(QPen(QColor("#E2E8F0"), 1.5, Qt.DashLine))
+        painter.drawLine(QPointF(centers[0] - slot_w * 0.3, road_y - 13),
+                         QPointF(centers[-1] + slot_w * 0.3, road_y - 13))
 
         for i in range(n):
             val = values[i]
             state = self._get_element_state(i, sort_event, bars)
-            cx, cy = self._animated_xy(i, centers, base_y, sort_event, t)
+            pose = self._pose(i, centers, base_y, sort_event, t, size * 0.5)
+            cx, cy = pose.x, pose.y
 
             if state["sorted"]:
                 body = QColor("#10B981")
@@ -675,8 +664,12 @@ class SortingPlaygroundRenderer:
             else:
                 body = QColor("#4F46E5")
 
-            body_rect = QRectF(cx - car_w / 2.0, cy - car_h / 2.0, car_w, car_h)
-            cabin = QRectF(cx - car_w * 0.22, cy - car_h * 0.95, car_w * 0.44, car_h * 0.58)
+            painter.save()
+            painter.translate(cx, cy)
+            painter.rotate(pose.tilt_deg)
+
+            body_rect = QRectF(-car_w / 2.0, -car_h / 2.0, car_w, car_h)
+            cabin = QRectF(-car_w * 0.22, -car_h * 0.95, car_w * 0.44, car_h * 0.58)
             painter.setBrush(QBrush(body))
             painter.setPen(QPen(body.darker(130), 1.0))
             painter.drawRoundedRect(body_rect, 7, 7)
@@ -684,14 +677,23 @@ class SortingPlaygroundRenderer:
             painter.drawRoundedRect(cabin, 5, 5)
 
             wheel_r = max(4.0, car_h * 0.28)
-            painter.setBrush(QBrush(QColor("#0F172A")))
-            painter.setPen(Qt.NoPen)
-            painter.drawEllipse(QPointF(cx - car_w * 0.28, cy + car_h * 0.42), wheel_r, wheel_r)
-            painter.drawEllipse(QPointF(cx + car_w * 0.28, cy + car_h * 0.42), wheel_r, wheel_r)
+            for wx in (-car_w * 0.28, car_w * 0.28):
+                wy = car_h * 0.42
+                painter.setBrush(QBrush(QColor("#0F172A")))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(QPointF(wx, wy), wheel_r, wheel_r)
+                painter.save()
+                painter.translate(wx, wy)
+                painter.rotate(pose.rotation_deg)
+                painter.setPen(QPen(QColor("#E2E8F0"), max(1.4, wheel_r * 0.28)))
+                painter.drawLine(QPointF(-wheel_r * 0.7, 0), QPointF(wheel_r * 0.7, 0))
+                painter.drawLine(QPointF(0, -wheel_r * 0.7), QPointF(0, wheel_r * 0.7))
+                painter.restore()
 
             painter.setFont(get_mono_font(max(10, int(car_h * 0.55)), weight=700))
             painter.setPen(QPen(QColor("#FFFFFF")))
             painter.drawText(body_rect, Qt.AlignCenter, str(val))
+            painter.restore()
 
             painter.setFont(get_mono_font(11, weight=500))
             painter.setPen(QPen(QColor(COLORS["text_muted"])))
@@ -724,22 +726,14 @@ class SortingPlaygroundRenderer:
             state = self._get_element_state(i, sort_event, bars)
 
             bar_h = (val / max_val) * (avail_h - 40)
-            bx = margin_x + i * (bar_w + bar_spacing)
+            rest_x = margin_x + i * (bar_w + bar_spacing)
+            rest_y = height - margin_y - bar_h
+            slot_centers = [margin_x + k * (bar_w + bar_spacing) for k in range(n)]
+            pose = self._pose(i, slot_centers, rest_y, sort_event, t)
+            bx = pose.x
+            by = rest_y
+            bar_h = bar_h * pose.scale_y
             by = height - margin_y - bar_h
-            if not self.reduced_motion and sort_event:
-                ease = self._ease(t)
-                swap_pair = self._swap_pair(sort_event)
-                if swap_pair and i in swap_pair:
-                    other = swap_pair[1] if i == swap_pair[0] else swap_pair[0]
-                    origin = margin_x + other * (bar_w + bar_spacing)
-                    bx = origin + (bx - origin) * ease
-                    by -= 4.0 * 18.0 * ease * (1.0 - ease)
-                elif sort_event.event_type == SortEventType.SHIFT and i == sort_event.target_index \
-                        and sort_event.moving_index is not None:
-                    origin = margin_x + sort_event.moving_index * (bar_w + bar_spacing)
-                    bx = origin + (bx - origin) * ease
-                elif sort_event.event_type == SortEventType.MERGE_WRITE and i == sort_event.target_index:
-                    by += (1.0 - ease) * 24.0
 
             # Color logic
             if state["sorted"]:

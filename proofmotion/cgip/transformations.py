@@ -240,10 +240,16 @@ def generate_transformation_demo(
             expl = f"Translate shape by dx={dx:.1f} along X-axis and dy={dy:.1f} along Y-axis."
         elif t_type == "scale":
             sx, sy = t_spec.get("sx", 1.0), t_spec.get("sy", 1.0)
-            m_step = scaling_matrix(sx, sy)
-            t_name = f"Scaling S({sx:.1f}, {sy:.1f})"
-            eq = f"S(sx={sx:.1f}, sy={sy:.1f}): P' = S · P"
-            expl = f"Scale shape by factor sx={sx:.1f} horizontally and sy={sy:.1f} vertically."
+            cx, cy = float(t_spec.get("cx", 0.0)), float(t_spec.get("cy", 0.0))
+            m_step = scaling_matrix(sx, sy, cx=cx, cy=cy)
+            if cx != 0.0 or cy != 0.0:
+                t_name = f"Scaling S({sx:.1f}, {sy:.1f}) about Pivot ({cx:.1f}, {cy:.1f})"
+                eq = f"S(sx={sx:.1f}, sy={sy:.1f}, P_pivot=({cx:.1f}, {cy:.1f})): P' = T(p) · S(s) · T(-p) · P"
+                expl = f"Scale shape by factor sx={sx:.1f}, sy={sy:.1f} about fixed pivot ({cx:.1f}, {cy:.1f})."
+            else:
+                t_name = f"Scaling S({sx:.1f}, {sy:.1f})"
+                eq = f"S(sx={sx:.1f}, sy={sy:.1f}): P' = S · P"
+                expl = f"Scale shape by factor sx={sx:.1f} horizontally and sy={sy:.1f} vertically."
         elif t_type == "rotate":
             deg = float(t_spec.get("angle", 45.0))
             cx = float(t_spec.get("cx", 0.0))

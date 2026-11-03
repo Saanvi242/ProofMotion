@@ -34,7 +34,7 @@ class TimelineWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("TimelineContainer")
-        self.setFixedHeight(38)
+        self.setFixedHeight(26)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
 
@@ -106,13 +106,13 @@ class TimelineWidget(QWidget):
         painter.drawRoundedRect(bg_rect, 6, 6)
 
         # Label: STEP X OF Y
-        painter.setFont(get_mono_font(12, weight=600))
-        painter.setPen(QPen(QColor(COLORS["accent_gold"])))
+        painter.setFont(get_mono_font(11, weight=700))
+        painter.setPen(QPen(QColor("#6C5CE7")))
         badge_text = f"STEP {self._current_step}/{self._total_steps}"
-        painter.drawText(QRectF(12, 0, 85, h), Qt.AlignLeft | Qt.AlignVCenter, badge_text)
+        painter.drawText(QRectF(10, 0, 85, h), Qt.AlignLeft | Qt.AlignVCenter, badge_text)
 
-        margin_x = 104
-        track_w = w - margin_x - 18
+        margin_x = 98
+        track_w = w - margin_x - 14
         if track_w <= 10:
             return
 
@@ -120,7 +120,7 @@ class TimelineWidget(QWidget):
         curr = max(1, min(total, self._current_step))
 
         # Base track
-        track_pen = QPen(QColor(COLORS["border"]), 3, Qt.SolidLine, Qt.RoundCap)
+        track_pen = QPen(QColor("#E2E8F0"), 3, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(track_pen)
         painter.drawLine(QPointF(margin_x, cy), QPointF(margin_x + track_w, cy))
 
@@ -128,7 +128,7 @@ class TimelineWidget(QWidget):
         prog_ratio = (curr - 1) / max(1, total - 1) if total > 1 else 1.0
         active_x = margin_x + prog_ratio * track_w
 
-        fill_pen = QPen(QColor(COLORS["accent_teal"]), 3, Qt.SolidLine, Qt.RoundCap)
+        fill_pen = QPen(QColor("#6C5CE7"), 3, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(fill_pen)
         painter.drawLine(QPointF(margin_x, cy), QPointF(active_x, cy))
 
@@ -140,30 +140,30 @@ class TimelineWidget(QWidget):
 
                 if i + 1 < curr:
                     # Completed
-                    painter.setBrush(QBrush(QColor(COLORS["accent_teal"])))
-                    painter.setPen(QPen(QColor(COLORS["bg_panel_alt"]), 1.5))
-                    painter.drawEllipse(QPointF(nx, cy), 4.5, 4.5)
+                    painter.setBrush(QBrush(QColor("#6C5CE7")))
+                    painter.setPen(QPen(QColor("#FFFFFF"), 1.2))
+                    painter.drawEllipse(QPointF(nx, cy), 4.0, 4.0)
                 elif i + 1 == curr:
-                    # Current active step (gold halo & dot)
-                    halo_color = QColor(COLORS["accent_gold"])
-                    halo_color.setAlpha(45)
+                    # Current active step
+                    halo_color = QColor("#6C5CE7")
+                    halo_color.setAlpha(40)
                     painter.setBrush(QBrush(halo_color))
                     painter.setPen(Qt.NoPen)
-                    painter.drawEllipse(QPointF(nx, cy), 10, 10)
+                    painter.drawEllipse(QPointF(nx, cy), 9, 9)
 
-                    painter.setBrush(QBrush(QColor(COLORS["accent_gold"])))
+                    painter.setBrush(QBrush(QColor("#6C5CE7")))
                     painter.setPen(QPen(QColor("#FFFFFF"), 1.5))
-                    painter.drawEllipse(QPointF(nx, cy), 6, 6)
+                    painter.drawEllipse(QPointF(nx, cy), 5.5, 5.5)
                 else:
                     # Upcoming
-                    painter.setBrush(QBrush(QColor(COLORS["border_soft"])))
-                    painter.setPen(QPen(QColor(COLORS["border"]), 1.5))
-                    painter.drawEllipse(QPointF(nx, cy), 3.5, 3.5)
+                    painter.setBrush(QBrush(QColor("#CBD5E1")))
+                    painter.setPen(QPen(QColor("#E2E8F0"), 1.0))
+                    painter.drawEllipse(QPointF(nx, cy), 3.0, 3.0)
         else:
             # High step counts: sleek cursor handle
-            painter.setBrush(QBrush(QColor(COLORS["accent_gold"])))
+            painter.setBrush(QBrush(QColor("#6C5CE7")))
             painter.setPen(QPen(QColor("#FFFFFF"), 1.5))
-            painter.drawEllipse(QPointF(active_x, cy), 6, 6)
+            painter.drawEllipse(QPointF(active_x, cy), 5.5, 5.5)
 
 
 class AnimationControls(QWidget):
@@ -180,8 +180,8 @@ class AnimationControls(QWidget):
         self._is_playing = False
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 10, 14, 10)
-        outer.setSpacing(8)
+        outer.setContentsMargins(12, 6, 12, 6)
+        outer.setSpacing(6)
 
         # 1. Timeline Widget (replaces bulky progress bar with interactive step scrubber)
         self._timeline = TimelineWidget(self)
@@ -254,7 +254,7 @@ class AnimationControls(QWidget):
         if primary:
             btn.setProperty("primary", "true")
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setFixedHeight(36)
+        btn.setFixedHeight(32)
         return btn
 
     def _on_play_pause_clicked(self):

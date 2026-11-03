@@ -93,6 +93,14 @@ class TestProjection3D(unittest.TestCase):
         self.assertAlmostEqual(origin_view[1], 0.0)
         self.assertAlmostEqual(origin_view[2], -10.0)
 
+    def test_sphere_cylinder_mesh_helpers(self):
+        verts, edges, faces = p3d.get_mesh_3d("sphere")
+        self.assertGreater(len(verts), 8)
+        self.assertGreater(len(faces), 0)
+        verts_c, edges_c, faces_c = p3d.get_mesh_3d("cylinder")
+        self.assertGreater(len(verts_c), 8)
+        self.assertGreater(len(faces_c), 0)
+
     def test_generate_3d_demo_steps(self):
         steps = p3d.generate_3d_demo("cube", "perspective", rx_deg=20.0, ry_deg=30.0, tx=1.0, ty=2.0)
         self.assertEqual(len(steps), 3)
