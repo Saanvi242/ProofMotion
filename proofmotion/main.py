@@ -14,6 +14,12 @@ Wires together:
 
 import os
 import sys
+
+# Ensure package directory is on path regardless of invocation working directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QFont, QFontDatabase
 
