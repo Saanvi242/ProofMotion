@@ -314,6 +314,7 @@ class ParameterPanel(QWidget):
     exportPdfRequested = pyqtSignal()
     tabChanged = pyqtSignal(int)
     compareRequested = pyqtSignal(str)
+    compareWithRequested = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -807,40 +808,60 @@ class ParameterPanel(QWidget):
             self._params_layout.addWidget(row)
             i += 1
 
-        # 2. Quick Presets Section (if available for this topic)
         topic_key = getattr(theorem, "key", "")
-        presets = TOPIC_PRESETS.get(topic_key, [])
-        if presets:
-            self._preset_section = self._build_preset_section(presets)
-            self._params_layout.addWidget(self._preset_section)
 
-        # 3. Sorting Visual Themes Section (if sorting topic)
-        if topic_key in ("bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"):
-            theme_section = self._build_sorting_styles_section()
-            self._params_layout.addWidget(theme_section)
-            comp_btn = QPushButton("⚔  Compare with Another Algorithm →")
-            comp_btn.setObjectName("CompareQuickBtn")
-            comp_btn.setCursor(Qt.PointingHandCursor)
-            comp_btn.setStyleSheet("""
-                QPushButton#CompareQuickBtn {
-                    background-color: #F5F3FF;
+        # Auto-apply and quick swap button for Compare Sorting
+        if topic_key == "compare_sorting":
+            for k in ("algo_1", "algo_2"):
+                cb = self._inputs.get(k)
+                if isinstance(cb, QComboBox):
+                    cb.activated.connect(lambda *_: self._on_apply_clicked())
+
+            swap_btn = QPushButton("⇄  Swap Left and Right Algorithms")
+            swap_btn.setObjectName("CompareSwapParamBtn")
+            swap_btn.setCursor(Qt.PointingHandCursor)
+            swap_btn.setStyleSheet("""
+                QPushButton#CompareSwapParamBtn {
+                    background-color: #F8FAFC;
                     color: #6C5CE7;
-                    border: 1px solid #DDD6FE;
+                    border: 1px dashed #C4B5FD;
                     border-radius: 6px;
-                    padding: 8px 12px;
+                    padding: 6px 12px;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 11.5px;
                     font-weight: 600;
-                    text-align: center;
+                    margin-top: 4px;
+                    margin-bottom: 4px;
                 }
-                QPushButton#CompareQuickBtn:hover {
+                QPushButton#CompareSwapParamBtn:hover {
                     background-color: #EDE9FE;
                     border-color: #8B5CF6;
                     color: #5B21B6;
                 }
             """)
-            comp_btn.clicked.connect(lambda: self.compareRequested.emit("compare_sorting"))
-            self._params_layout.addWidget(comp_btn)
+            def _swap_inputs():
+                cb1 = self._inputs.get("algo_1")
+                cb2 = self._inputs.get("algo_2")
+                if isinstance(cb1, QComboBox) and isinstance(cb2, QComboBox):
+                    t1, t2 = cb1.currentText(), cb2.currentText()
+                    cb1.setCurrentText(t2)
+                    cb2.setCurrentText(t1)
+                    self._on_apply_clicked()
+            swap_btn.clicked.connect(_swap_inputs)
+            self._params_layout.addWidget(swap_btn)
+
+        # 2. Quick Presets Section (if available for this topic)
+        presets = TOPIC_PRESETS.get(topic_key, [])
+        if presets:
+            self._preset_section = self._build_preset_section(presets)
+            self._params_layout.addWidget(self._preset_section)
+
+        # 3. Sorting Visual Themes & Benchmark Comparison Section (if sorting topic)
+        if topic_key in ("bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"):
+            theme_section = self._build_sorting_styles_section()
+            self._params_layout.addWidget(theme_section)
+            comp_card = self._build_sorting_comparison_launcher(topic_key)
+            self._params_layout.addWidget(comp_card)
         elif topic_key in ("linear_search", "binary_search"):
             comp_btn = QPushButton("⚔  Compare Linear vs Binary Search →")
             comp_btn.setObjectName("CompareQuickBtn")
@@ -1214,6 +1235,105 @@ class ParameterPanel(QWidget):
             self._style_chips.append((key, chip))
 
         v.addWidget(chips_widget)
+        return container
+
+    def _build_sorting_comparison_launcher(self, topic_key: str) -> QWidget:
+        container = QFrame()
+        container.setObjectName("SortingCompLauncherCard")
+        container.setStyleSheet("""
+            QFrame#SortingCompLauncherCard {
+                background-color: #F8FAFC;
+                border: 1.5px solid #E2E8F0;
+                border-radius: 8px;
+                padding: 10px;
+                margin-top: 6px;
+            }
+            QLabel#LauncherTitle {
+                color: #0F172A;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11.5px;
+                font-weight: 700;
+            }
+            QLabel#LauncherSubtitle {
+                color: #64748B;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 10.5px;
+            }
+            QComboBox#LauncherCombo {
+                background-color: #FFFFFF;
+                color: #0F172A;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11px;
+                font-weight: 600;
+                height: 28px;
+            }
+            QPushButton#LauncherBtn {
+                background-color: #6C5CE7;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11px;
+                font-weight: 700;
+                height: 28px;
+            }
+            QPushButton#LauncherBtn:hover {
+                background-color: #5B21B6;
+            }
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        hdr = QLabel("⚔  Benchmark Comparison")
+        hdr.setObjectName("LauncherTitle")
+        layout.addWidget(hdr)
+
+        names = {
+            "bubble_sort": "Bubble Sort",
+            "selection_sort": "Selection Sort",
+            "insertion_sort": "Insertion Sort",
+            "merge_sort": "Merge Sort",
+            "quick_sort": "Quick Sort",
+        }
+        current_name = names.get(topic_key, "Bubble Sort")
+
+        sub = QLabel(f"Run {current_name} side-by-side with a rival:")
+        sub.setObjectName("LauncherSubtitle")
+        layout.addWidget(sub)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        combo = QComboBox()
+        combo.setObjectName("LauncherCombo")
+        all_algos = ["Bubble Sort", "Selection Sort", "Insertion Sort", "Merge Sort", "Quick Sort"]
+        rivals = [a for a in all_algos if a != current_name]
+        combo.addItems(rivals)
+
+        default_rival = "Quick Sort" if current_name != "Quick Sort" else "Merge Sort"
+        if default_rival in rivals:
+            combo.setCurrentText(default_rival)
+
+        row.addWidget(combo, stretch=1)
+
+        btn = QPushButton("Compare →")
+        btn.setObjectName("LauncherBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        def _launch():
+            rival = combo.currentText()
+            self.compareWithRequested.emit(current_name, rival)
+            self.compareRequested.emit("compare_sorting")
+        btn.clicked.connect(_launch)
+        row.addWidget(btn, stretch=0)
+
+        layout.addLayout(row)
         return container
 
     def _on_style_chip_clicked(self, style_key: str, chip_btn: QPushButton):

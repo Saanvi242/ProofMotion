@@ -585,6 +585,10 @@ class ApplicationController(QObject):
         w.parameter_panel.parametersApplied.connect(self.on_parameters_applied)
         if hasattr(w.parameter_panel, "compareRequested"):
             w.parameter_panel.compareRequested.connect(self.on_topic_selected)
+        if hasattr(w.parameter_panel, "compareWithRequested"):
+            w.parameter_panel.compareWithRequested.connect(self.start_sorting_comparison)
+        if hasattr(w, "comparison_bar"):
+            w.comparison_bar.algorithmsChanged.connect(self.on_comparison_algorithms_changed)
 
         w.animation_controls.previousClicked.connect(self.on_previous_step)
         w.animation_controls.playPauseClicked.connect(self.on_play_pause)
@@ -751,6 +755,11 @@ class ApplicationController(QObject):
         if hasattr(self.window, "set_sorting_controls_visible"):
             self.window.set_sorting_controls_visible(is_sorting)
 
+        # Toggle Comparison Bar for compare_sorting
+        is_compare_sorting = (topic_key == "compare_sorting")
+        if hasattr(self.window, "set_comparison_bar_visible"):
+            self.window.set_comparison_bar_visible(is_compare_sorting)
+
         # Toggle lesson tabs for clipping (Cohen-Sutherland and Sutherland-Hodgman)
         is_cohen = (topic_key == "clip_cohen_sutherland")
         is_hodgman = (topic_key == "clip_sutherland_hodgman")
@@ -797,10 +806,40 @@ class ApplicationController(QObject):
             self.window.parameter_panel.clear_validation_error()
             self._render_current_step()
             self.window.set_status(f"Generated {len(steps)} steps for {self.current_topic_key}")
+            if self.current_topic_key == "compare_sorting" and hasattr(self.window, "comparison_bar"):
+                a1 = values.get("algo_1", "Bubble Sort")
+                a2 = values.get("algo_2", "Quick Sort")
+                self.window.comparison_bar.set_algorithms(a1, a2)
         except Exception as e:
             err_msg = str(e)
             self.window.parameter_panel.show_validation_error(err_msg)
             self.window.set_status(f"Validation Error: {err_msg}")
+
+    def on_comparison_algorithms_changed(self, algo_1: str, algo_2: str):
+        """Handle real-time algorithm selection changes from ComparisonBar."""
+        if self.current_topic_key != "compare_sorting":
+            return
+        if not hasattr(self, "current_parameters") or not self.current_parameters:
+            self.current_parameters = {}
+        self.current_parameters["algo_1"] = algo_1
+        self.current_parameters["algo_2"] = algo_2
+
+        # Synchronize parameter panel controls if visible
+        if hasattr(self.window, "parameter_panel"):
+            panel_inputs = getattr(self.window.parameter_panel, "_inputs", {})
+            for k, val in (("algo_1", algo_1), ("algo_2", algo_2)):
+                widget = panel_inputs.get(k)
+                if widget and hasattr(widget, "setCurrentText"):
+                    widget.blockSignals(True)
+                    widget.setCurrentText(val)
+                    widget.blockSignals(False)
+
+        self.on_parameters_applied(self.current_parameters)
+
+    def start_sorting_comparison(self, algo_1: str, algo_2: str):
+        """Directly jump into comparison mode with pre-selected algorithms."""
+        self.on_topic_selected("compare_sorting")
+        self.on_comparison_algorithms_changed(algo_1, algo_2)
 
     def _generate_steps_for_topic(self, key: str, values: dict) -> List[Any]:
         # 1. Theorems

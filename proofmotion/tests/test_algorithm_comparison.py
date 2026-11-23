@@ -285,6 +285,47 @@ class TestGUIComparisonIntegration(unittest.TestCase):
         self.assertEqual(comp["algo_1"]["search_data"].get("found_index"), 3)
         self.assertEqual(comp["algo_2"]["search_data"].get("found_index"), 3)
 
+    def test_comparison_bar_changes_algorithms(self):
+        self.controller.on_module_selected("sorting")
+        self.controller.on_topic_selected("compare_sorting")
+        self.assertFalse(self.window.comparison_bar.isHidden())
+
+        # Select Merge Sort vs Quick Sort using ComparisonBar
+        self.window.comparison_bar.set_algorithms("Merge Sort", "Quick Sort", emit=True)
+
+        final_step = self.controller.current_steps[-1]
+        comp = final_step.render_data.comparison_data
+        self.assertEqual(comp["algo_1"]["name"], "Merge Sort")
+        self.assertEqual(comp["algo_2"]["name"], "Quick Sort")
+
+    def test_comparison_bar_swap(self):
+        self.controller.on_module_selected("sorting")
+        self.controller.on_topic_selected("compare_sorting")
+        self.window.comparison_bar.set_algorithms("Bubble Sort", "Quick Sort", emit=True)
+
+        # Click swap
+        self.window.comparison_bar.swap_btn.click()
+
+        final_step = self.controller.current_steps[-1]
+        comp = final_step.render_data.comparison_data
+        self.assertEqual(comp["algo_1"]["name"], "Quick Sort")
+        self.assertEqual(comp["algo_2"]["name"], "Bubble Sort")
+
+    def test_start_sorting_comparison_from_single_topic(self):
+        self.controller.on_module_selected("sorting")
+        self.controller.on_topic_selected("merge_sort")
+        self.assertTrue(self.window.comparison_bar.isHidden())
+
+        # Directly start comparison of Merge Sort vs Quick Sort
+        self.controller.start_sorting_comparison("Merge Sort", "Quick Sort")
+        self.assertEqual(self.controller.current_topic_key, "compare_sorting")
+        self.assertFalse(self.window.comparison_bar.isHidden())
+
+        final_step = self.controller.current_steps[-1]
+        comp = final_step.render_data.comparison_data
+        self.assertEqual(comp["algo_1"]["name"], "Merge Sort")
+        self.assertEqual(comp["algo_2"]["name"], "Quick Sort")
+
 
 class TestVisualizationWidgetComparisonRendering(unittest.TestCase):
     @classmethod

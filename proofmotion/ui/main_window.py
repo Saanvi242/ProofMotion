@@ -22,6 +22,7 @@ from ui.equation_panel import EquationPanel
 from ui.animation_controls import AnimationControls
 from ui.view_controls import ViewControls
 from ui.clipping_tabs import ClippingTabBar
+from ui.comparison_bar import ComparisonBar
 from ui.lesson_completion_banner import LessonCompletionBanner
 
 from graphics.visualization_widget import VisualizationWidget
@@ -661,6 +662,10 @@ class MainWindow(QMainWindow):
         self.clipping_tab_bar.hide()
         layout.addWidget(self.clipping_tab_bar, stretch=0)
 
+        self.comparison_bar = ComparisonBar()
+        self.comparison_bar.hide()
+        layout.addWidget(self.comparison_bar, stretch=0)
+
         self.canvas_stack = QStackedWidget()
         self.canvas_stack.setObjectName("CanvasStack")
         self.visualization_widget = VisualizationWidget()
@@ -699,6 +704,10 @@ class MainWindow(QMainWindow):
 
     def set_clipping_tabs_visible(self, visible: bool):
         self.clipping_tab_bar.setVisible(visible)
+
+    def set_comparison_bar_visible(self, visible: bool):
+        if hasattr(self, "comparison_bar"):
+            self.comparison_bar.setVisible(visible)
 
     def _open_applications_dialog(self, topic_key: str = ""):
         if not topic_key and hasattr(self, "_controller"):
