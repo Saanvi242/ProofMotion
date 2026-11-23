@@ -1,20 +1,23 @@
 """
 ui/practical_learning_widget.py
 --------------------------------
-Separate, dedicated views and dialogs for:
+Clean, structured, and uncluttered views and dialogs for:
 1. Explore Applications: Real-World Applications & Practical Example (Reference/Reading interface).
 2. Test Your Understanding: Interactive Knowledge Check (Quiz interface with Check Answer & completion state).
 
-Both dialogs are independent, non-modal, completely emoji-free, and styled with ProofMotion's
-clean purple, lavender, slate, and white design system.
+Design principles:
+- Minimal, distraction-free aesthetic with generous spacing and clear visual hierarchy.
+- No emojis, no oversized cards, no redundant double-borders.
+- Crisp typography (Inter) with high contrast and readable line spacing.
+- Prevents text clipping and horizontal overflow across all screen sizes.
 """
 
 from typing import List, Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QButtonGroup, QSizePolicy, QDialog, QStackedWidget
+    QScrollArea, QFrame, QSizePolicy, QDialog, QStackedWidget
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QColor
 
 from core.practical_content import (
@@ -24,13 +27,13 @@ from core.practical_content import (
 
 
 # ==============================================================================
-# FEATURE 1: EXPLORE APPLICATIONS (Practical Examples & Real-World Context)
+# FEATURE 1: EXPLORE APPLICATIONS (Reference & Reading Interface)
 # ==============================================================================
 
 class ExploreApplicationsWidget(QWidget):
     """
     Dedicated reading and reference view containing ONLY:
-    - Topic summary and domain category
+    - Topic header with category tag and concise summary
     - Practical Example (intuitive scenario + connection to ProofMotion)
     - Real-World Applications ("Where Is It Used?") with industrial contexts
     Does NOT contain any MCQ questions or quiz elements.
@@ -46,11 +49,13 @@ class ExploreApplicationsWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        # Smooth, uncluttered vertical scroll area
         self._scroll = QScrollArea()
         self._scroll.setObjectName("AppsScrollArea")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setStyleSheet("""
             QScrollArea#AppsScrollArea {
                 background-color: #F8FAFC;
@@ -63,11 +68,11 @@ class ExploreApplicationsWidget(QWidget):
 
         self._content_widget = QWidget()
         self._content_layout = QVBoxLayout(self._content_widget)
-        self._content_layout.setContentsMargins(24, 20, 24, 28)
-        self._content_layout.setSpacing(20)
+        self._content_layout.setContentsMargins(28, 22, 28, 28)
+        self._content_layout.setSpacing(22)
 
         # Build reading sections
-        self._build_header_card()
+        self._build_header_section()
         self._build_practical_example_section()
         self._build_real_world_apps_section()
 
@@ -75,56 +80,56 @@ class ExploreApplicationsWidget(QWidget):
         self._scroll.setWidget(self._content_widget)
         outer.addWidget(self._scroll)
 
-    def _build_header_card(self):
-        """Header card showing Category Pill, Title, and Concise Summary."""
+    def _build_header_section(self):
+        """Header showing Category Tag, Topic Title, and Concise Overview."""
         self._header_card = QFrame()
         self._header_card.setObjectName("HeaderCard")
         self._header_card.setStyleSheet("""
             QFrame#HeaderCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
+                border-radius: 10px;
             }
         """)
         h_layout = QVBoxLayout(self._header_card)
         h_layout.setContentsMargins(20, 18, 20, 18)
         h_layout.setSpacing(8)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        tag_row = QHBoxLayout()
+        tag_row.setSpacing(8)
 
         self._category_badge = QLabel("LEARNING MODULE")
         self._category_badge.setStyleSheet("""
             background-color: #EDE9FE;
             color: #5B21B6;
-            font-family: Inter;
-            font-size: 11px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 10.5px;
             font-weight: 700;
-            letter-spacing: 0.8px;
-            padding: 4px 10px;
-            border-radius: 6px;
+            letter-spacing: 0.6px;
+            padding: 3px 8px;
+            border-radius: 4px;
         """)
-        top_row.addWidget(self._category_badge)
+        tag_row.addWidget(self._category_badge)
 
         self._practical_badge = QLabel("REAL-WORLD APPLICATIONS")
         self._practical_badge.setStyleSheet("""
             background-color: #F1F5F9;
             color: #475569;
-            font-family: Inter;
-            font-size: 10.5px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 10px;
             font-weight: 600;
             letter-spacing: 0.5px;
-            padding: 4px 10px;
-            border-radius: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
         """)
-        top_row.addWidget(self._practical_badge)
-        top_row.addStretch(1)
-        h_layout.addLayout(top_row)
+        tag_row.addWidget(self._practical_badge)
+        tag_row.addStretch(1)
+        h_layout.addLayout(tag_row)
 
         self._topic_title_label = QLabel("Select a Topic")
         self._topic_title_label.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 18px;
             font-weight: 700;
         """)
@@ -134,8 +139,8 @@ class ExploreApplicationsWidget(QWidget):
         self._summary_label.setWordWrap(True)
         self._summary_label.setStyleSheet("""
             color: #475569;
-            font-family: Inter;
-            font-size: 13.5px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13px;
             line-height: 1.5;
         """)
         h_layout.addWidget(self._summary_label)
@@ -149,44 +154,43 @@ class ExploreApplicationsWidget(QWidget):
         v_layout.setContentsMargins(0, 0, 0, 0)
         v_layout.setSpacing(8)
 
+        # Clear section heading
         sec_header = QHBoxLayout()
         sec_header.setSpacing(8)
         pill = QLabel("PRACTICAL EXAMPLE")
         pill.setStyleSheet("""
-            color: #0284C7;
-            background-color: #E0F2FE;
-            font-family: Inter;
+            color: #0369A1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.8px;
-            padding: 3px 9px;
-            border-radius: 6px;
+            letter-spacing: 0.6px;
         """)
         sec_header.addWidget(pill)
-        lbl = QLabel("Familiar scenario connecting theory to everyday experience")
-        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12px; font-weight: 500;")
+        lbl = QLabel("— Familiar scenario connecting theory to everyday experience")
+        lbl.setStyleSheet("color: #64748B; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px;")
         sec_header.addWidget(lbl)
         sec_header.addStretch(1)
         v_layout.addLayout(sec_header)
 
+        # Content Card
         self._example_card = QFrame()
         self._example_card.setObjectName("ExampleCard")
         self._example_card.setStyleSheet("""
             QFrame#ExampleCard {
                 background-color: #FFFFFF;
-                border: 1px solid #BAE6FD;
-                border-left: 4px solid #0284C7;
-                border-radius: 12px;
+                border: 1px solid #E2E8F0;
+                border-left: 3.5px solid #0284C7;
+                border-radius: 10px;
             }
         """)
         c_layout = QVBoxLayout(self._example_card)
-        c_layout.setContentsMargins(20, 16, 20, 16)
+        c_layout.setContentsMargins(18, 16, 18, 16)
         c_layout.setSpacing(10)
 
         self._scenario_title = QLabel("Example Scenario")
         self._scenario_title.setStyleSheet("""
-            color: #0369A1;
-            font-family: Inter;
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 14.5px;
             font-weight: 700;
         """)
@@ -195,40 +199,41 @@ class ExploreApplicationsWidget(QWidget):
         self._scenario_desc = QLabel("")
         self._scenario_desc.setWordWrap(True)
         self._scenario_desc.setStyleSheet("""
-            color: #1E293B;
-            font-family: Inter;
-            font-size: 13.5px;
-            line-height: 1.5;
+            color: #334155;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13px;
+            line-height: 1.55;
         """)
         c_layout.addWidget(self._scenario_desc)
 
+        # ProofMotion connection box
         self._connection_box = QFrame()
         self._connection_box.setStyleSheet("""
             background-color: #F8FAFC;
-            border: 1px dashed #CBD5E1;
-            border-radius: 8px;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
         """)
         conn_layout = QVBoxLayout(self._connection_box)
-        conn_layout.setContentsMargins(14, 10, 14, 10)
+        conn_layout.setContentsMargins(12, 10, 12, 10)
         conn_layout.setSpacing(4)
 
-        conn_badge = QLabel("HOW PROOFMOTION DEMONSTRATES THIS:")
+        conn_badge = QLabel("HOW PROOFMOTION DEMONSTRATES THIS")
         conn_badge.setStyleSheet("""
             color: #6C5CE7;
-            font-family: Inter;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.7px;
+            letter-spacing: 0.6px;
         """)
         conn_layout.addWidget(conn_badge)
 
         self._connection_text = QLabel("")
         self._connection_text.setWordWrap(True)
         self._connection_text.setStyleSheet("""
-            color: #334155;
-            font-family: Inter;
+            color: #475569;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 12.5px;
-            line-height: 1.45;
+            line-height: 1.5;
         """)
         conn_layout.addWidget(self._connection_text)
         c_layout.addWidget(self._connection_box)
@@ -237,36 +242,35 @@ class ExploreApplicationsWidget(QWidget):
         self._content_layout.addWidget(self._example_container)
 
     def _build_real_world_apps_section(self):
-        """Real-World Applications ("Where Is It Used?")."""
+        """Real-World Applications Section."""
         self._apps_container = QWidget()
         self._apps_layout = QVBoxLayout(self._apps_container)
         self._apps_layout.setContentsMargins(0, 0, 0, 0)
         self._apps_layout.setSpacing(10)
 
+        # Section Heading
         sec_header = QHBoxLayout()
         sec_header.setSpacing(8)
         pill = QLabel("WHERE IS IT USED?")
         pill.setStyleSheet("""
-            color: #7C3AED;
-            background-color: #EDE9FE;
-            font-family: Inter;
+            color: #6C5CE7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.8px;
-            padding: 3px 9px;
-            border-radius: 6px;
+            letter-spacing: 0.6px;
         """)
         sec_header.addWidget(pill)
-        lbl = QLabel("Industrial software, hardware, and engineering systems")
-        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12px; font-weight: 500;")
+        lbl = QLabel("— Production software, hardware, and engineering systems")
+        lbl.setStyleSheet("color: #64748B; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px;")
         sec_header.addWidget(lbl)
         sec_header.addStretch(1)
         self._apps_layout.addLayout(sec_header)
 
+        # Applications List Area
         self._apps_list_widget = QWidget()
         self._apps_list_layout = QVBoxLayout(self._apps_list_widget)
         self._apps_list_layout.setContentsMargins(0, 0, 0, 0)
-        self._apps_list_layout.setSpacing(12)
+        self._apps_list_layout.setSpacing(10)
         self._apps_layout.addWidget(self._apps_list_widget)
 
         self._content_layout.addWidget(self._apps_container)
@@ -310,34 +314,35 @@ class ExploreApplicationsWidget(QWidget):
             QFrame#AppCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
+                border-radius: 10px;
             }
         """)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(8)
 
+        # Header: Domain Tag + Title
         top_row = QHBoxLayout()
-        top_row.setSpacing(10)
+        top_row.setSpacing(8)
 
         tag_badge = QLabel(app.tag.upper())
         tag_badge.setStyleSheet("""
             background-color: #F1F5F9;
             color: #475569;
-            font-family: Inter;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.6px;
-            padding: 3px 8px;
-            border-radius: 5px;
+            letter-spacing: 0.5px;
+            padding: 2px 7px;
+            border-radius: 4px;
         """)
         top_row.addWidget(tag_badge)
 
         title_lbl = QLabel(app.title)
         title_lbl.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
-            font-size: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13.5px;
             font-weight: 700;
         """)
         top_row.addWidget(title_lbl, stretch=1)
@@ -347,23 +352,24 @@ class ExploreApplicationsWidget(QWidget):
         desc_lbl.setWordWrap(True)
         desc_lbl.setStyleSheet("""
             color: #334155;
-            font-family: Inter;
-            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 12.5px;
             line-height: 1.5;
         """)
         layout.addWidget(desc_lbl)
 
+        # Clean bullet points of production contexts
         if app.contexts:
             ctx_box = QFrame()
-            ctx_box.setStyleSheet("background-color: #F8FAFC; border-radius: 8px; padding: 4px;")
+            ctx_box.setStyleSheet("background-color: #F8FAFC; border: 1px solid #F1F5F9; border-radius: 6px;")
             ctx_layout = QVBoxLayout(ctx_box)
             ctx_layout.setContentsMargins(12, 8, 12, 8)
-            ctx_layout.setSpacing(4)
+            ctx_layout.setSpacing(3)
 
             for ctx in app.contexts:
                 bullet = QLabel(f"•  {ctx}")
                 bullet.setWordWrap(True)
-                bullet.setStyleSheet("color: #475569; font-family: Inter; font-size: 12.5px; line-height: 1.4;")
+                bullet.setStyleSheet("color: #475569; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px; line-height: 1.4;")
                 ctx_layout.addWidget(bullet)
 
             layout.addWidget(ctx_box)
@@ -381,8 +387,8 @@ class RealWorldApplicationsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("ProofMotion — Real-World Applications")
         self.setModal(False)
-        self.resize(760, 680)
-        self.setMinimumSize(620, 480)
+        self.resize(740, 660)
+        self.setMinimumSize(600, 480)
 
         self.setStyleSheet("""
             QDialog {
@@ -396,11 +402,11 @@ class RealWorldApplicationsDialog(QDialog):
 
         # Header Bar
         header = QFrame()
-        header.setFixedHeight(64)
+        header.setFixedHeight(56)
         header.setStyleSheet("""
             QFrame {
                 background-color: #FFFFFF;
-                border-bottom: 1.5px solid #E2E8F0;
+                border-bottom: 1px solid #E2E8F0;
             }
         """)
         h_layout = QHBoxLayout(header)
@@ -414,16 +420,16 @@ class RealWorldApplicationsDialog(QDialog):
         title_lbl = QLabel("Practical Applications & Real-World Context")
         title_lbl.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
-            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 14.5px;
             font-weight: 700;
             background: transparent;
         """)
         sub_lbl = QLabel("Industrial software, hardware, and engineering systems")
         sub_lbl.setStyleSheet("""
             color: #64748B;
-            font-family: Inter;
-            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 11.5px;
             background: transparent;
         """)
         title_col.addWidget(title_lbl)
@@ -438,10 +444,10 @@ class RealWorldApplicationsDialog(QDialog):
                 background-color: #F1F5F9;
                 color: #475569;
                 border: 1px solid #CBD5E1;
-                border-radius: 8px;
-                padding: 6px 14px;
-                font-family: Inter;
-                font-size: 12.5px;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -505,6 +511,7 @@ class KnowledgeCheckWidget(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setStyleSheet("""
             QScrollArea#QuizScrollArea {
                 background-color: #F8FAFC;
@@ -518,7 +525,7 @@ class KnowledgeCheckWidget(QWidget):
         self._content_widget = QWidget()
         self._content_layout = QVBoxLayout(self._content_widget)
         self._content_layout.setContentsMargins(24, 20, 24, 24)
-        self._content_layout.setSpacing(16)
+        self._content_layout.setSpacing(14)
 
         # Header Card
         self._build_header_card()
@@ -530,7 +537,7 @@ class KnowledgeCheckWidget(QWidget):
         self._q_page = QWidget()
         self._q_layout = QVBoxLayout(self._q_page)
         self._q_layout.setContentsMargins(0, 0, 0, 0)
-        self._q_layout.setSpacing(14)
+        self._q_layout.setSpacing(12)
         self._build_question_view()
         self._view_stack.addWidget(self._q_page)
 
@@ -538,7 +545,7 @@ class KnowledgeCheckWidget(QWidget):
         self._completion_page = QWidget()
         self._comp_layout = QVBoxLayout(self._completion_page)
         self._comp_layout.setContentsMargins(0, 0, 0, 0)
-        self._comp_layout.setSpacing(14)
+        self._comp_layout.setSpacing(12)
         self._build_completion_view()
         self._view_stack.addWidget(self._completion_page)
 
@@ -555,12 +562,12 @@ class KnowledgeCheckWidget(QWidget):
             QFrame#QuizHeaderCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
+                border-radius: 10px;
             }
         """)
         h_layout = QVBoxLayout(self._header_card)
-        h_layout.setContentsMargins(18, 16, 18, 16)
-        h_layout.setSpacing(8)
+        h_layout.setContentsMargins(16, 14, 16, 14)
+        h_layout.setSpacing(6)
 
         top_row = QHBoxLayout()
         top_row.setSpacing(8)
@@ -569,12 +576,12 @@ class KnowledgeCheckWidget(QWidget):
         self._category_badge.setStyleSheet("""
             background-color: #EDE9FE;
             color: #5B21B6;
-            font-family: Inter;
-            font-size: 10.5px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.8px;
-            padding: 3px 9px;
-            border-radius: 6px;
+            letter-spacing: 0.6px;
+            padding: 3px 8px;
+            border-radius: 4px;
         """)
         top_row.addWidget(self._category_badge)
 
@@ -582,11 +589,11 @@ class KnowledgeCheckWidget(QWidget):
         self._progress_badge.setStyleSheet("""
             background-color: #F1F5F9;
             color: #475569;
-            font-family: Inter;
-            font-size: 10.5px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 10px;
             font-weight: 600;
-            padding: 3px 9px;
-            border-radius: 6px;
+            padding: 3px 8px;
+            border-radius: 4px;
         """)
         top_row.addWidget(self._progress_badge)
         top_row.addStretch(1)
@@ -595,14 +602,14 @@ class KnowledgeCheckWidget(QWidget):
         self._topic_title_label = QLabel("Select a Topic")
         self._topic_title_label.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
-            font-size: 17px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 16px;
             font-weight: 700;
         """)
         h_layout.addWidget(self._topic_title_label)
 
-        sub_desc = QLabel("Test your understanding of concept mechanics and practical utility.")
-        sub_desc.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12.5px;")
+        sub_desc = QLabel("Verify your understanding of concept mechanics and practical utility.")
+        sub_desc.setStyleSheet("color: #64748B; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12px;")
         h_layout.addWidget(sub_desc)
 
         self._content_layout.addWidget(self._header_card)
@@ -615,20 +622,20 @@ class KnowledgeCheckWidget(QWidget):
             QFrame#QuestionCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
+                border-radius: 10px;
             }
         """)
         card_layout = QVBoxLayout(self._question_card)
-        card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.setSpacing(14)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(12)
 
         # Question prompt
         self._prompt_label = QLabel("")
         self._prompt_label.setWordWrap(True)
         self._prompt_label.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
-            font-size: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13.5px;
             font-weight: 600;
             line-height: 1.5;
         """)
@@ -649,15 +656,15 @@ class KnowledgeCheckWidget(QWidget):
         self._feedback_box.setObjectName("QuizFeedback")
         self._feedback_box.hide()
         fb_layout = QVBoxLayout(self._feedback_box)
-        fb_layout.setContentsMargins(14, 12, 14, 12)
-        fb_layout.setSpacing(6)
+        fb_layout.setContentsMargins(14, 10, 14, 10)
+        fb_layout.setSpacing(4)
 
         self._result_header = QLabel("")
         fb_layout.addWidget(self._result_header)
 
         self._explanation_label = QLabel("")
         self._explanation_label.setWordWrap(True)
-        self._explanation_label.setStyleSheet("color: #334155; font-family: Inter; font-size: 12.5px; line-height: 1.5;")
+        self._explanation_label.setStyleSheet("color: #334155; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12.5px; line-height: 1.45;")
         fb_layout.addWidget(self._explanation_label)
 
         card_layout.addWidget(self._feedback_box)
@@ -671,18 +678,18 @@ class KnowledgeCheckWidget(QWidget):
         self._action_btn.setObjectName("QuizActionButton")
         self._action_btn.setCursor(Qt.PointingHandCursor)
         self._action_btn.setEnabled(False)
-        self._action_btn.setFixedHeight(36)
-        self._action_btn.setMinimumWidth(130)
+        self._action_btn.setFixedHeight(34)
+        self._action_btn.setMinimumWidth(120)
         self._action_btn.setStyleSheet("""
             QPushButton#QuizActionButton {
                 background-color: #6C5CE7;
                 color: #FFFFFF;
                 border: none;
-                border-radius: 8px;
-                font-family: Inter;
-                font-size: 12.5px;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 12px;
                 font-weight: 600;
-                padding: 0px 16px;
+                padding: 0px 14px;
             }
             QPushButton#QuizActionButton:hover {
                 background-color: #5B4BC4;
@@ -704,49 +711,52 @@ class KnowledgeCheckWidget(QWidget):
         card.setStyleSheet("""
             QFrame#CompletionCard {
                 background-color: #FFFFFF;
-                border: 1px solid #BBF7D0;
-                border-radius: 12px;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
             }
         """)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
         layout.setAlignment(Qt.AlignCenter)
 
         title = QLabel("Quiz Completed")
         title.setStyleSheet("""
-            color: #065F46;
-            font-family: Inter;
-            font-size: 18px;
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 17px;
             font-weight: 700;
         """)
         layout.addWidget(title, alignment=Qt.AlignCenter)
 
         self._score_label = QLabel("Score: 0 / 0")
         self._score_label.setStyleSheet("""
-            color: #0F172A;
-            font-family: Inter;
-            font-size: 15px;
-            font-weight: 600;
+            color: #5B21B6;
+            background-color: #EDE9FE;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 14px;
+            border-radius: 12px;
         """)
         layout.addWidget(self._score_label, alignment=Qt.AlignCenter)
 
-        desc = QLabel("You have successfully verified your theoretical and practical understanding of this topic.")
+        desc = QLabel("You have verified your theoretical and practical understanding of this topic.")
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #475569; font-family: Inter; font-size: 13px; text-align: center;")
+        desc.setStyleSheet("color: #475569; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12.5px; text-align: center;")
         layout.addWidget(desc, alignment=Qt.AlignCenter)
 
         self._retake_btn = QPushButton("Retake Quiz")
         self._retake_btn.setCursor(Qt.PointingHandCursor)
-        self._retake_btn.setFixedHeight(34)
-        self._retake_btn.setFixedWidth(120)
+        self._retake_btn.setFixedHeight(32)
+        self._retake_btn.setFixedWidth(110)
         self._retake_btn.setStyleSheet("""
             QPushButton {
                 background-color: #F1F5F9;
                 color: #334155;
                 border: 1px solid #CBD5E1;
-                border-radius: 8px;
-                font-family: Inter;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                 font-size: 12px;
                 font-weight: 600;
             }
@@ -850,21 +860,21 @@ class KnowledgeCheckWidget(QWidget):
                 QFrame#QuizFeedback {
                     background-color: #F0FDF4;
                     border: 1px solid #BBF7D0;
-                    border-radius: 8px;
+                    border-radius: 6px;
                 }
             """)
             self._result_header.setText("Correct")
-            self._result_header.setStyleSheet("color: #15803D; font-family: Inter; font-size: 13px; font-weight: 700;")
+            self._result_header.setStyleSheet("color: #15803D; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12.5px; font-weight: 700;")
         else:
             self._feedback_box.setStyleSheet("""
                 QFrame#QuizFeedback {
                     background-color: #FFF1F2;
                     border: 1px solid #FECDD3;
-                    border-radius: 8px;
+                    border-radius: 6px;
                 }
             """)
             self._result_header.setText("Incorrect")
-            self._result_header.setStyleSheet("color: #B91C1C; font-family: Inter; font-size: 13px; font-weight: 700;")
+            self._result_header.setStyleSheet("color: #B91C1C; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; font-size: 12.5px; font-weight: 700;")
 
         self._feedback_box.show()
 
@@ -885,10 +895,10 @@ class KnowledgeCheckWidget(QWidget):
                 QPushButton {
                     background-color: #F5F3FF;
                     color: #5B21B6;
-                    border: 2px solid #6C5CE7;
-                    border-radius: 8px;
-                    padding: 10px 14px;
-                    font-family: Inter;
+                    border: 1.5px solid #6C5CE7;
+                    border-radius: 6px;
+                    padding: 9px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 12.5px;
                     font-weight: 600;
                     text-align: left;
@@ -900,9 +910,9 @@ class KnowledgeCheckWidget(QWidget):
                     background-color: #ECFDF5;
                     color: #065F46;
                     border: 1.5px solid #10B981;
-                    border-radius: 8px;
-                    padding: 10px 14px;
-                    font-family: Inter;
+                    border-radius: 6px;
+                    padding: 9px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 12.5px;
                     font-weight: 600;
                     text-align: left;
@@ -914,9 +924,9 @@ class KnowledgeCheckWidget(QWidget):
                     background-color: #FEF2F2;
                     color: #991B1B;
                     border: 1.5px solid #EF4444;
-                    border-radius: 8px;
-                    padding: 10px 14px;
-                    font-family: Inter;
+                    border-radius: 6px;
+                    padding: 9px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 12.5px;
                     font-weight: 600;
                     text-align: left;
@@ -928,9 +938,9 @@ class KnowledgeCheckWidget(QWidget):
                     background-color: #F8FAFC;
                     color: #94A3B8;
                     border: 1px solid #E2E8F0;
-                    border-radius: 8px;
-                    padding: 10px 14px;
-                    font-family: Inter;
+                    border-radius: 6px;
+                    padding: 9px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 12.5px;
                     text-align: left;
                 }
@@ -938,18 +948,18 @@ class KnowledgeCheckWidget(QWidget):
         else:  # default
             btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #F8FAFC;
+                    background-color: #FFFFFF;
                     color: #334155;
                     border: 1px solid #CBD5E1;
-                    border-radius: 8px;
-                    padding: 10px 14px;
-                    font-family: Inter;
+                    border-radius: 6px;
+                    padding: 9px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                     font-size: 12.5px;
                     text-align: left;
                     line-height: 1.4;
                 }
                 QPushButton:hover {
-                    background-color: #F1F5F9;
+                    background-color: #F8FAFC;
                     border-color: #6C5CE7;
                     color: #0F172A;
                 }
@@ -966,8 +976,8 @@ class KnowledgeCheckDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("ProofMotion — Test Your Understanding")
         self.setModal(False)
-        self.resize(620, 620)
-        self.setMinimumSize(540, 480)
+        self.resize(580, 580)
+        self.setMinimumSize(500, 440)
 
         self.setStyleSheet("""
             QDialog {
@@ -981,11 +991,11 @@ class KnowledgeCheckDialog(QDialog):
 
         # Header Bar
         header = QFrame()
-        header.setFixedHeight(64)
+        header.setFixedHeight(56)
         header.setStyleSheet("""
             QFrame {
                 background-color: #FFFFFF;
-                border-bottom: 1.5px solid #E2E8F0;
+                border-bottom: 1px solid #E2E8F0;
             }
         """)
         h_layout = QHBoxLayout(header)
@@ -999,16 +1009,16 @@ class KnowledgeCheckDialog(QDialog):
         title_lbl = QLabel("Test Your Understanding")
         title_lbl.setStyleSheet("""
             color: #0F172A;
-            font-family: Inter;
-            font-size: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 14.5px;
             font-weight: 700;
             background: transparent;
         """)
         sub_lbl = QLabel("Concept mechanics and practical utility check")
         sub_lbl.setStyleSheet("""
             color: #64748B;
-            font-family: Inter;
-            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 11.5px;
             background: transparent;
         """)
         title_col.addWidget(title_lbl)
@@ -1023,10 +1033,10 @@ class KnowledgeCheckDialog(QDialog):
                 background-color: #F1F5F9;
                 color: #475569;
                 border: 1px solid #CBD5E1;
-                border-radius: 8px;
-                padding: 6px 14px;
-                font-family: Inter;
-                font-size: 12.5px;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton:hover {
