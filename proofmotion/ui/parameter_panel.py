@@ -304,7 +304,7 @@ class ParameterPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ParamPanel")
-        self.setMinimumWidth(260)
+        self.setMinimumWidth(300)
         self._specs: List[ParameterSpec] = []
         self._inputs: Dict[str, Any] = {}
         self._preset_chips: List[QPushButton] = []
@@ -313,7 +313,7 @@ class ParameterPanel(QWidget):
         self._active_theorem = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 12)
+        outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
         # Header Segmented Tab Bar: [ Explore Parameters ]  [ Lesson Resources ]
@@ -335,12 +335,14 @@ class ParameterPanel(QWidget):
         self._tab_params_btn.setObjectName("TabParamsBtn")
         self._tab_params_btn.setCursor(Qt.PointingHandCursor)
         self._tab_params_btn.setFixedHeight(30)
+        self._tab_params_btn.setToolTip("Explore Parameters")
         self._tab_params_btn.clicked.connect(lambda: self.set_tab(0))
 
         self._tab_resources_btn = QPushButton("Lesson Resources")
         self._tab_resources_btn.setObjectName("TabResourcesBtn")
         self._tab_resources_btn.setCursor(Qt.PointingHandCursor)
         self._tab_resources_btn.setFixedHeight(30)
+        self._tab_resources_btn.setToolTip("Lesson Resources")
         self._tab_resources_btn.clicked.connect(lambda: self.set_tab(1))
 
         tab_layout.addWidget(self._tab_params_btn)
@@ -681,6 +683,23 @@ class ParameterPanel(QWidget):
     def current_tab(self) -> int:
         return self._tab_stack.currentIndex()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_tab_labels()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_tab_labels()
+
+    def _update_tab_labels(self):
+        available = self._tab_bar_frame.width()
+        if available > 0 and available < 265:
+            self._tab_params_btn.setText("Parameters")
+            self._tab_resources_btn.setText("Resources")
+        else:
+            self._tab_params_btn.setText("Explore Parameters")
+            self._tab_resources_btn.setText("Lesson Resources")
+
     def _update_tab_button_styles(self):
         active_idx = self._tab_stack.currentIndex()
         active_style = """
@@ -690,21 +709,21 @@ class ParameterPanel(QWidget):
                 border: 1px solid #D8D1FF;
                 border-radius: 6px;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-                font-size: 11.5px;
-                font-weight: 700;
-                padding: 4px 6px;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 3px 4px;
             }
         """
         inactive_style = """
             QPushButton {
                 background: transparent;
                 color: #64748B;
-                border: none;
+                border: 1px solid transparent;
                 border-radius: 6px;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-                font-size: 11.5px;
+                font-size: 11px;
                 font-weight: 500;
-                padding: 4px 6px;
+                padding: 3px 4px;
             }
             QPushButton:hover {
                 background-color: #EDE9FE;

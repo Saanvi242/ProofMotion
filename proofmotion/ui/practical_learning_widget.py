@@ -12,6 +12,7 @@ Design principles:
 - Prevents text clipping and horizontal overflow across all screen sizes.
 """
 
+import textwrap
 from typing import List, Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -466,6 +467,11 @@ class RealWorldApplicationsDialog(QDialog):
 
     def open_topic(self, topic_key: str):
         self.practical_widget.set_topic(topic_key)
+        if self.parent() and hasattr(self.parent(), "geometry"):
+            p_geo = self.parent().geometry()
+            x = p_geo.x() + max(0, (p_geo.width() - self.width()) // 2)
+            y = p_geo.y() + max(0, (p_geo.height() - self.height()) // 2)
+            self.move(x, y)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -786,6 +792,17 @@ class KnowledgeCheckWidget(QWidget):
         self._load_question(0)
         self._view_stack.setCurrentIndex(0)
 
+    @staticmethod
+    def _format_option_text(letter: str, text: str, max_width: int = 60) -> str:
+        indent = f"  {letter}.  "
+        sub_indent = " " * len(indent)
+        lines = textwrap.wrap(text, width=max_width)
+        if not lines:
+            return f"  {letter}.  {text}"
+        if len(lines) == 1:
+            return f"  {letter}.  {lines[0]}"
+        return indent + lines[0] + "\n" + "\n".join(sub_indent + line for line in lines[1:])
+
     def _load_question(self, index: int):
         if not self._questions or index < 0 or index >= len(self._questions):
             return
@@ -806,7 +823,7 @@ class KnowledgeCheckWidget(QWidget):
             if i < len(q.options):
                 btn.show()
                 letter = prefix_letters[i]
-                btn.setText(f"  {letter}.  {q.options[i]}")
+                btn.setText(self._format_option_text(letter, q.options[i]))
                 btn.setEnabled(True)
                 self._apply_option_style(btn, "default")
             else:
@@ -979,8 +996,8 @@ class KnowledgeCheckDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("ProofMotion — Test Your Understanding")
         self.setModal(False)
-        self.resize(580, 580)
-        self.setMinimumSize(500, 440)
+        self.resize(800, 680)
+        self.setMinimumSize(640, 520)
 
         self.setStyleSheet("""
             QDialog {
@@ -1058,6 +1075,11 @@ class KnowledgeCheckDialog(QDialog):
 
     def open_topic(self, topic_key: str):
         self.quiz_widget.set_topic(topic_key)
+        if self.parent() and hasattr(self.parent(), "geometry"):
+            p_geo = self.parent().geometry()
+            x = p_geo.x() + max(0, (p_geo.width() - self.width()) // 2)
+            y = p_geo.y() + max(0, (p_geo.height() - self.height()) // 2)
+            self.move(x, y)
         self.show()
         self.raise_()
         self.activateWindow()

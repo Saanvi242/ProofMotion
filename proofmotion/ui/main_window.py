@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self._status_bar)
 
         self._is_canvas_fullscreen = False
-        self._saved_splitter_sizes = [230, 880, 250]
+        self._saved_splitter_sizes = [220, 840, 340]
 
         # Shortcuts for fullscreen / focus mode
         esc_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
@@ -609,7 +609,7 @@ class MainWindow(QMainWindow):
         viz_container = self._build_visualization_container()
 
         self.parameter_panel = ParameterPanel()
-        self.parameter_panel.setMinimumWidth(260)
+        self.parameter_panel.setMinimumWidth(300)
         self.parameter_panel.setMaximumWidth(750)
         sh_param = QGraphicsDropShadowEffect(self.parameter_panel)
         sh_param.setBlurRadius(20)
@@ -628,7 +628,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([215, 850, 300])
+        splitter.setSizes([220, 840, 340])
 
         return splitter
 
