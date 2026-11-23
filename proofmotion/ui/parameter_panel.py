@@ -296,6 +296,8 @@ class ParameterPanel(QWidget):
     sortingStyleRequested = pyqtSignal(str) # "balls", "cubes", "marbles", "bars"
     curveTChanged = pyqtSignal(float)
 
+    exploreApplicationsRequested = pyqtSignal(str, bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ParamPanel")
@@ -308,45 +310,22 @@ class ParameterPanel(QWidget):
         self._active_theorem = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 12)
-        outer.setSpacing(10)
+        outer.setContentsMargins(16, 16, 16, 14)
+        outer.setSpacing(12)
 
-        # Segmented Tab Switcher: [ Parameters ]  [ Where Is It Used? ]
-        self._panel_tab_bar = QWidget()
-        self._panel_tab_bar.setObjectName("ParameterPanelTabBar")
-        tab_row = QHBoxLayout(self._panel_tab_bar)
-        tab_row.setContentsMargins(0, 0, 0, 0)
-        tab_row.setSpacing(6)
-
-        self._tab_params_btn = QPushButton("Parameters")
-        self._tab_params_btn.setObjectName("PanelSegmentBtn")
-        self._tab_params_btn.setCursor(Qt.PointingHandCursor)
-        self._tab_params_btn.setCheckable(True)
-        self._tab_params_btn.setChecked(True)
-        self._tab_params_btn.setProperty("selected", "true")
-        self._tab_params_btn.clicked.connect(self.show_parameters)
-        tab_row.addWidget(self._tab_params_btn, stretch=1)
-
-        self._tab_apps_btn = QPushButton("Where Is It Used? 💡")
-        self._tab_apps_btn.setObjectName("PanelSegmentBtn")
-        self._tab_apps_btn.setCursor(Qt.PointingHandCursor)
-        self._tab_apps_btn.setCheckable(True)
-        self._tab_apps_btn.setChecked(False)
-        self._tab_apps_btn.setProperty("selected", "false")
-        self._tab_apps_btn.clicked.connect(self.show_applications)
-        tab_row.addWidget(self._tab_apps_btn, stretch=1)
-
-        outer.addWidget(self._panel_tab_bar)
+        # Header Title - Clean, focused parameter view
+        title_row = QHBoxLayout()
+        title = QLabel("Explore parameters")
+        title.setObjectName("PanelTitle")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        outer.addLayout(title_row)
 
         divider = QWidget()
         divider.setObjectName("PanelDivider")
         outer.addWidget(divider)
 
-        # Tab Stack hosting Page 0 (Parameters) and Page 1 (Practical Learning & Quiz)
-        self._tab_stack = QStackedWidget()
-        self._tab_stack.setObjectName("ParameterPanelTabStack")
-
-        # Scrollable container for parameters, presets & actions (Page 0)
+        # Scrollable container for parameters, presets, actions & supporting links
         self._scroll = QScrollArea()
         self._scroll.setObjectName("ParamScrollArea")
         self._scroll.setWidgetResizable(True)
@@ -404,45 +383,116 @@ class ParameterPanel(QWidget):
 
         self._fields_layout.addWidget(self._action_widget)
 
-        # Stretch at bottom of scroll area so controls and buttons stay packed at the top
+        # 3. Compact Supporting Information Entry: Real-World Applications & Quiz
+        self._apps_banner = QFrame()
+        self._apps_banner.setObjectName("ExploreAppsBanner")
+        self._apps_banner.setStyleSheet("""
+            QFrame#ExploreAppsBanner {
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        banner_layout = QVBoxLayout(self._apps_banner)
+        banner_layout.setContentsMargins(12, 10, 12, 12)
+        banner_layout.setSpacing(6)
+
+        b_top = QHBoxLayout()
+        b_top.setSpacing(6)
+        b_badge = QLabel("REAL-WORLD APPLICATIONS 💡")
+        b_badge.setStyleSheet("""
+            background-color: #EDE9FE;
+            color: #6C5CE7;
+            font-family: Inter;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        """)
+        b_top.addWidget(b_badge)
+        b_top.addStretch(1)
+        banner_layout.addLayout(b_top)
+
+        b_desc = QLabel("See how this concept is applied in production software & engineering systems.")
+        b_desc.setWordWrap(True)
+        b_desc.setStyleSheet("color: #64748B; font-family: Inter; font-size: 11.5px; line-height: 1.35;")
+        banner_layout.addWidget(b_desc)
+
+        self._explore_apps_btn = QPushButton("Explore Applications →")
+        self._explore_apps_btn.setObjectName("ExploreAppsButton")
+        self._explore_apps_btn.setCursor(Qt.PointingHandCursor)
+        self._explore_apps_btn.setFixedHeight(32)
+        self._explore_apps_btn.setStyleSheet("""
+            QPushButton#ExploreAppsButton {
+                background-color: #FFFFFF;
+                color: #6C5CE7;
+                border: 1.5px solid #D8D1FF;
+                border-radius: 6px;
+                font-family: Inter;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton#ExploreAppsButton:hover {
+                background-color: #6C5CE7;
+                color: #FFFFFF;
+                border-color: #6C5CE7;
+            }
+        """)
+        self._explore_apps_btn.clicked.connect(self._on_explore_apps_clicked)
+        banner_layout.addWidget(self._explore_apps_btn)
+
+        self._quiz_link_btn = QPushButton("Test Your Understanding ↗")
+        self._quiz_link_btn.setCursor(Qt.PointingHandCursor)
+        self._quiz_link_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #059669;
+                border: none;
+                font-family: Inter;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 2px 0px;
+            }
+            QPushButton:hover {
+                color: #047857;
+                text-decoration: underline;
+            }
+        """)
+        self._quiz_link_btn.clicked.connect(self._on_quiz_link_clicked)
+        banner_layout.addWidget(self._quiz_link_btn, alignment=Qt.AlignCenter)
+
+        self._fields_layout.addWidget(self._apps_banner)
+
+        # Stretch at bottom of scroll area so controls stay packed
         self._fields_layout.addStretch(1)
 
         self._scroll.setWidget(self._fields_container)
-        self._tab_stack.addWidget(self._scroll)  # Page 0
+        outer.addWidget(self._scroll, stretch=1)
 
-        # Page 1: Practical Learning & Real-World Applications Widget
+        # Retain practical_widget reference for backwards compatibility
         self.practical_widget = PracticalLearningWidget()
-        self._tab_stack.addWidget(self.practical_widget)  # Page 1
 
-        outer.addWidget(self._tab_stack, stretch=1)
         self._set_empty_state()
 
-    def show_parameters(self):
-        """Switch to the Parameters & Presets tab."""
-        self._tab_stack.setCurrentIndex(0)
-        self._tab_params_btn.setChecked(True)
-        self._tab_params_btn.setProperty("selected", "true")
-        self._tab_apps_btn.setChecked(False)
-        self._tab_apps_btn.setProperty("selected", "false")
-        self._update_tab_button_styles()
+    def _on_explore_apps_clicked(self):
+        topic_key = getattr(self._active_theorem, "key", "")
+        self.exploreApplicationsRequested.emit(topic_key, False)
 
-    def show_applications(self):
-        """Switch to the Practical Learning & Real-World Applications tab."""
-        self._tab_stack.setCurrentIndex(1)
-        self._tab_params_btn.setChecked(False)
-        self._tab_params_btn.setProperty("selected", "false")
-        self._tab_apps_btn.setChecked(True)
-        self._tab_apps_btn.setProperty("selected", "true")
-        self._update_tab_button_styles()
-        if self._active_theorem:
-            topic_key = getattr(self._active_theorem, "key", "")
+    def _on_quiz_link_clicked(self):
+        topic_key = getattr(self._active_theorem, "key", "")
+        self.exploreApplicationsRequested.emit(topic_key, True)
+
+    def show_applications(self, scroll_to_quiz: bool = False):
+        """Open the wide dedicated Real-World Applications view."""
+        topic_key = getattr(self._active_theorem, "key", "")
+        if hasattr(self, "practical_widget"):
             self.practical_widget.set_topic(topic_key)
+        self.exploreApplicationsRequested.emit(topic_key, scroll_to_quiz)
 
-    def _update_tab_button_styles(self):
-        for btn in (self._tab_params_btn, self._tab_apps_btn):
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-            btn.update()
+    def show_parameters(self):
+        """Parameters are always visible in the focused right sidebar."""
+        pass
 
     # ------------------------------------------------------------------
     # Public API

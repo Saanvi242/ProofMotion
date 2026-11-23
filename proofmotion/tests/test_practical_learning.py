@@ -148,60 +148,75 @@ class TestPracticalLearningWidget(unittest.TestCase):
 
 
 class TestMainWindowIntegration(unittest.TestCase):
-    """Verifies that MainWindow and ParameterPanel tabs function correctly."""
+    """Verifies that MainWindow, ParameterPanel, and PracticalLearningDialog integrate cleanly."""
 
     def setUp(self):
         self.engine = TheoremEngine()
         self.window = MainWindow(theorems=self.engine.get_theorems_list())
         self.controller = ApplicationController(self.window, engine=self.engine)
 
-    def test_parameter_panel_tab_switching(self):
+    def test_parameter_panel_overlay_trigger(self):
         panel = self.window.parameter_panel
-        self.assertEqual(panel._tab_stack.currentIndex(), 0)  # Starts on Parameters
+        dialog = self.window.practical_dialog
+        self.assertFalse(dialog.isVisible())
 
-        # Switch to Applications
-        panel.show_applications()
-        self.assertEqual(panel._tab_stack.currentIndex(), 1)
-        self.assertEqual(panel._tab_apps_btn.property("selected"), "true")
-        self.assertEqual(panel._tab_params_btn.property("selected"), "false")
+        # Click Explore Applications button in parameter panel
+        panel._explore_apps_btn.click()
+        self.assertTrue(dialog.isVisible())
+        self.assertEqual(dialog.practical_widget._current_topic_key, panel.practical_widget._current_topic_key)
 
-        # Switch back to Parameters
-        panel.show_parameters()
-        self.assertEqual(panel._tab_stack.currentIndex(), 0)
-        self.assertEqual(panel._tab_params_btn.property("selected"), "true")
+        # Close dialog
+        dialog.close()
+        self.assertFalse(dialog.isVisible())
 
     def test_equation_panel_nav_button(self):
         self.controller.on_module_selected("sorting")
         self.controller.on_topic_selected("bubble_sort")
 
-        # Click "Where is this used? ↗" in equation panel
+        # Click "Explore Applications ↗" in equation panel
         self.window.equation_panel._apps_btn.click()
-        self.assertEqual(self.window.parameter_panel._tab_stack.currentIndex(), 1)
-        self.assertEqual(self.window.parameter_panel.practical_widget._current_topic_key, "bubble_sort")
+        self.assertTrue(self.window.practical_dialog.isVisible())
+        self.assertEqual(self.window.practical_dialog.practical_widget._current_topic_key, "bubble_sort")
+        self.window.practical_dialog.close()
 
     def test_topic_switching_updates_practical_content(self):
         self.controller.on_module_selected("clipping")
         self.controller.on_topic_selected("clip_cohen_sutherland")
         self.assertEqual(
-            self.window.parameter_panel.practical_widget._current_topic_key,
+            self.window.practical_dialog.practical_widget._current_topic_key,
             "clip_cohen_sutherland"
         )
         self.assertIn(
             "Cohen-Sutherland",
-            self.window.parameter_panel.practical_widget._topic_title_label.text()
+            self.window.practical_dialog.practical_widget._topic_title_label.text()
         )
 
         # Switch to binary search
         self.controller.on_module_selected("searching")
         self.controller.on_topic_selected("binary_search")
         self.assertEqual(
-            self.window.parameter_panel.practical_widget._current_topic_key,
+            self.window.practical_dialog.practical_widget._current_topic_key,
             "binary_search"
         )
         self.assertIn(
             "Binary Search",
-            self.window.parameter_panel.practical_widget._topic_title_label.text()
+            self.window.practical_dialog.practical_widget._topic_title_label.text()
         )
+
+    def test_dialog_does_not_reset_playback(self):
+        self.controller.on_module_selected("sorting")
+        self.controller.on_topic_selected("bubble_sort")
+        self.controller.on_step_selected(3)
+        self.assertEqual(self.controller.current_step_index, 3)
+
+        # Open and close the dedicated applications dialog
+        self.window._open_practical_dialog("bubble_sort", scroll_to_quiz=False)
+        self.assertTrue(self.window.practical_dialog.isVisible())
+        # Step index must remain exactly at 3
+        self.assertEqual(self.controller.current_step_index, 3)
+
+        self.window.practical_dialog.close()
+        self.assertEqual(self.controller.current_step_index, 3)
 
 
 if __name__ == "__main__":

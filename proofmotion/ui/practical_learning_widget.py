@@ -1,26 +1,26 @@
 """
 ui/practical_learning_widget.py
 --------------------------------
-Interactive Practical Learning & Real-World Applications widget.
-Displays:
+Interactive Practical Learning & Real-World Applications view and dialog.
+Provides:
 1. Feature B: Familiar Practical Example & connection to the ProofMotion visualization.
 2. Feature A: Real-World Applications ("Where Is It Used?") with technical contexts.
-3. Feature C: Lightweight Quick Knowledge Check with instant interactive feedback.
+3. Feature C: Lightweight Quick Knowledge Check ("Test Your Understanding").
+4. PracticalLearningDialog: Dedicated, comfortable overlay panel preventing sidebar overcrowding.
 """
 
 from typing import List, Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QButtonGroup, QSizePolicy
+    QScrollArea, QFrame, QButtonGroup, QSizePolicy, QDialog
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
+from PyQt5.QtGui import QFont, QColor
 
 from core.practical_content import (
     TopicPracticalData, QuizQuestion, RealWorldApplication,
     get_practical_content
 )
-from resources.theme import COLORS
 
 
 class QuizQuestionWidget(QFrame):
@@ -47,12 +47,12 @@ class QuizQuestionWidget(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
 
         # Header: Q1 Badge + Question Prompt
         header_row = QHBoxLayout()
-        header_row.setSpacing(8)
+        header_row.setSpacing(10)
 
         q_badge = QLabel(f"Q{self.q_index + 1}")
         q_badge.setStyleSheet("""
@@ -61,7 +61,7 @@ class QuizQuestionWidget(QFrame):
             font-family: Inter;
             font-size: 11px;
             font-weight: 700;
-            padding: 2px 7px;
+            padding: 3px 8px;
             border-radius: 6px;
         """)
         header_row.addWidget(q_badge)
@@ -71,9 +71,9 @@ class QuizQuestionWidget(QFrame):
         self._prompt_label.setStyleSheet("""
             color: #0F172A;
             font-family: Inter;
-            font-size: 13px;
+            font-size: 13.5px;
             font-weight: 600;
-            line-height: 1.4;
+            line-height: 1.45;
         """)
         header_row.addWidget(self._prompt_label, stretch=1)
         layout.addLayout(header_row)
@@ -95,10 +95,11 @@ class QuizQuestionWidget(QFrame):
                     color: #334155;
                     border: 1px solid #CBD5E1;
                     border-radius: 8px;
-                    padding: 8px 10px;
+                    padding: 10px 14px;
                     font-family: Inter;
-                    font-size: 12px;
+                    font-size: 12.5px;
                     text-align: left;
+                    line-height: 1.4;
                 }
                 QPushButton:hover {
                     background-color: #F1F5F9;
@@ -115,32 +116,32 @@ class QuizQuestionWidget(QFrame):
         self._feedback_box.setObjectName("FeedbackBox")
         self._feedback_box.hide()
         fb_layout = QVBoxLayout(self._feedback_box)
-        fb_layout.setContentsMargins(10, 8, 10, 8)
-        fb_layout.setSpacing(4)
+        fb_layout.setContentsMargins(14, 12, 14, 12)
+        fb_layout.setSpacing(6)
 
         self._result_header = QLabel("")
-        self._result_header.setStyleSheet("font-family: Inter; font-size: 12px; font-weight: 700;")
+        self._result_header.setStyleSheet("font-family: Inter; font-size: 12.5px; font-weight: 700;")
         fb_layout.addWidget(self._result_header)
 
         self._explanation_label = QLabel(self.q_data.explanation)
         self._explanation_label.setWordWrap(True)
-        self._explanation_label.setStyleSheet("color: #334155; font-family: Inter; font-size: 12px; line-height: 1.4;")
+        self._explanation_label.setStyleSheet("color: #334155; font-family: Inter; font-size: 12.5px; line-height: 1.5;")
         fb_layout.addWidget(self._explanation_label)
 
         # Subtle Reset Button
         self._reset_btn = QPushButton("Try Again")
         self._reset_btn.setCursor(Qt.PointingHandCursor)
-        self._reset_btn.setFixedWidth(80)
+        self._reset_btn.setFixedWidth(86)
         self._reset_btn.setStyleSheet("""
             QPushButton {
                 background: transparent;
                 color: #6C5CE7;
                 font-family: Inter;
-                font-size: 11px;
+                font-size: 11.5px;
                 font-weight: 600;
                 border: 1px solid #D5DDED;
-                border-radius: 4px;
-                padding: 3px 6px;
+                border-radius: 6px;
+                padding: 4px 8px;
                 margin-top: 4px;
             }
             QPushButton:hover {
@@ -168,9 +169,9 @@ class QuizQuestionWidget(QFrame):
                         color: #065F46;
                         border: 1.5px solid #10B981;
                         border-radius: 8px;
-                        padding: 8px 10px;
+                        padding: 10px 14px;
                         font-family: Inter;
-                        font-size: 12px;
+                        font-size: 12.5px;
                         font-weight: 600;
                         text-align: left;
                     }
@@ -183,9 +184,9 @@ class QuizQuestionWidget(QFrame):
                         color: #991B1B;
                         border: 1.5px solid #EF4444;
                         border-radius: 8px;
-                        padding: 8px 10px;
+                        padding: 10px 14px;
                         font-family: Inter;
-                        font-size: 12px;
+                        font-size: 12.5px;
                         font-weight: 600;
                         text-align: left;
                     }
@@ -197,9 +198,9 @@ class QuizQuestionWidget(QFrame):
                         color: #94A3B8;
                         border: 1px solid #E2E8F0;
                         border-radius: 8px;
-                        padding: 8px 10px;
+                        padding: 10px 14px;
                         font-family: Inter;
-                        font-size: 12px;
+                        font-size: 12.5px;
                         text-align: left;
                     }
                 """)
@@ -214,7 +215,7 @@ class QuizQuestionWidget(QFrame):
                 }
             """)
             self._result_header.setText("✓ Correct!")
-            self._result_header.setStyleSheet("color: #15803D; font-family: Inter; font-size: 12px; font-weight: 700;")
+            self._result_header.setStyleSheet("color: #15803D; font-family: Inter; font-size: 12.5px; font-weight: 700;")
         else:
             self._feedback_box.setStyleSheet("""
                 QFrame#FeedbackBox {
@@ -224,7 +225,7 @@ class QuizQuestionWidget(QFrame):
                 }
             """)
             self._result_header.setText("✕ Incorrect — Explanation:")
-            self._result_header.setStyleSheet("color: #B91C1C; font-family: Inter; font-size: 12px; font-weight: 700;")
+            self._result_header.setStyleSheet("color: #B91C1C; font-family: Inter; font-size: 12.5px; font-weight: 700;")
 
         self._feedback_box.show()
         self.answered.emit(is_correct)
@@ -240,9 +241,9 @@ class QuizQuestionWidget(QFrame):
                     color: #334155;
                     border: 1px solid #CBD5E1;
                     border-radius: 8px;
-                    padding: 8px 10px;
+                    padding: 10px 14px;
                     font-family: Inter;
-                    font-size: 12px;
+                    font-size: 12.5px;
                     text-align: left;
                 }
                 QPushButton:hover {
@@ -255,8 +256,8 @@ class QuizQuestionWidget(QFrame):
 
 class PracticalLearningWidget(QWidget):
     """
-    Main Practical Learning & Real-World Applications container.
-    Embedded as a dedicated tab/panel in the Learning Module.
+    Spacious, beautifully styled Practical Learning & Real-World Applications container.
+    Renders with generous padding and whitespace so nothing is clipped.
     """
 
     def __init__(self, parent=None):
@@ -277,7 +278,7 @@ class PracticalLearningWidget(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet("""
             QScrollArea#PracticalScrollArea {
-                background: transparent;
+                background-color: #F8FAFC;
                 border: none;
             }
             QScrollArea#PracticalScrollArea > QWidget > QWidget {
@@ -287,10 +288,14 @@ class PracticalLearningWidget(QWidget):
 
         self._content_widget = QWidget()
         self._content_layout = QVBoxLayout(self._content_widget)
-        self._content_layout.setContentsMargins(12, 10, 12, 16)
-        self._content_layout.setSpacing(14)
+        self._content_layout.setContentsMargins(24, 20, 24, 28)
+        self._content_layout.setSpacing(20)
 
-        # Build dynamic sections
+        # Build dynamic sections in required order:
+        # 1. Header & Summary
+        # 2. Practical Example
+        # 3. Real-World Applications
+        # 4. Quick Knowledge Check
         self._build_header_card()
         self._build_practical_example_section()
         self._build_real_world_apps_section()
@@ -311,12 +316,12 @@ class PracticalLearningWidget(QWidget):
             QFrame#HeaderCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 12px;
+                border-radius: 14px;
             }
         """)
         h_layout = QVBoxLayout(self._header_card)
-        h_layout.setContentsMargins(14, 12, 14, 12)
-        h_layout.setSpacing(6)
+        h_layout.setContentsMargins(20, 18, 20, 18)
+        h_layout.setSpacing(8)
 
         top_row = QHBoxLayout()
         top_row.setSpacing(8)
@@ -326,23 +331,23 @@ class PracticalLearningWidget(QWidget):
             background-color: #EDE9FE;
             color: #5B21B6;
             font-family: Inter;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
             letter-spacing: 0.8px;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 6px;
         """)
         top_row.addWidget(self._category_badge)
 
-        self._practical_badge = QLabel("APPLICATIONS & PRACTICE")
+        self._practical_badge = QLabel("REAL-WORLD APPLICATIONS & PRACTICE")
         self._practical_badge.setStyleSheet("""
             background-color: #F1F5F9;
             color: #475569;
             font-family: Inter;
-            font-size: 10px;
+            font-size: 10.5px;
             font-weight: 600;
             letter-spacing: 0.5px;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 6px;
         """)
         top_row.addWidget(self._practical_badge)
@@ -353,7 +358,7 @@ class PracticalLearningWidget(QWidget):
         self._topic_title_label.setStyleSheet("""
             color: #0F172A;
             font-family: Inter;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 700;
         """)
         h_layout.addWidget(self._topic_title_label)
@@ -363,8 +368,8 @@ class PracticalLearningWidget(QWidget):
         self._summary_label.setStyleSheet("""
             color: #475569;
             font-family: Inter;
-            font-size: 12.5px;
-            line-height: 1.4;
+            font-size: 13.5px;
+            line-height: 1.5;
         """)
         h_layout.addWidget(self._summary_label)
 
@@ -375,25 +380,25 @@ class PracticalLearningWidget(QWidget):
         self._example_container = QWidget()
         v_layout = QVBoxLayout(self._example_container)
         v_layout.setContentsMargins(0, 0, 0, 0)
-        v_layout.setSpacing(6)
+        v_layout.setSpacing(8)
 
         # Section Heading
         sec_header = QHBoxLayout()
-        sec_header.setSpacing(6)
+        sec_header.setSpacing(8)
         pill = QLabel("PRACTICAL EXAMPLE")
         pill.setStyleSheet("""
             color: #0284C7;
             background-color: #E0F2FE;
             font-family: Inter;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
             letter-spacing: 0.8px;
-            padding: 2px 7px;
-            border-radius: 5px;
+            padding: 3px 9px;
+            border-radius: 6px;
         """)
         sec_header.addWidget(pill)
-        lbl = QLabel("Familiar Scenario")
-        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 11.5px; font-weight: 500;")
+        lbl = QLabel("Familiar scenario connecting theory to everyday experience")
+        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12px; font-weight: 500;")
         sec_header.addWidget(lbl)
         sec_header.addStretch(1)
         v_layout.addLayout(sec_header)
@@ -405,19 +410,19 @@ class PracticalLearningWidget(QWidget):
             QFrame#ExampleCard {
                 background-color: #FFFFFF;
                 border: 1px solid #BAE6FD;
-                border-left: 3.5px solid #0284C7;
-                border-radius: 10px;
+                border-left: 4px solid #0284C7;
+                border-radius: 12px;
             }
         """)
         c_layout = QVBoxLayout(self._example_card)
-        c_layout.setContentsMargins(14, 12, 14, 12)
-        c_layout.setSpacing(8)
+        c_layout.setContentsMargins(20, 16, 20, 16)
+        c_layout.setSpacing(10)
 
         self._scenario_title = QLabel("Example Scenario")
         self._scenario_title.setStyleSheet("""
             color: #0369A1;
             font-family: Inter;
-            font-size: 13.5px;
+            font-size: 14.5px;
             font-weight: 700;
         """)
         c_layout.addWidget(self._scenario_title)
@@ -427,8 +432,8 @@ class PracticalLearningWidget(QWidget):
         self._scenario_desc.setStyleSheet("""
             color: #1E293B;
             font-family: Inter;
-            font-size: 12.5px;
-            line-height: 1.45;
+            font-size: 13.5px;
+            line-height: 1.5;
         """)
         c_layout.addWidget(self._scenario_desc)
 
@@ -440,16 +445,16 @@ class PracticalLearningWidget(QWidget):
             border-radius: 8px;
         """)
         conn_layout = QVBoxLayout(self._connection_box)
-        conn_layout.setContentsMargins(10, 8, 10, 8)
-        conn_layout.setSpacing(3)
+        conn_layout.setContentsMargins(14, 10, 14, 10)
+        conn_layout.setSpacing(4)
 
         conn_badge = QLabel("HOW PROOFMOTION DEMONSTRATES THIS:")
         conn_badge.setStyleSheet("""
             color: #6C5CE7;
             font-family: Inter;
-            font-size: 9.5px;
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.6px;
+            letter-spacing: 0.7px;
         """)
         conn_layout.addWidget(conn_badge)
 
@@ -458,8 +463,8 @@ class PracticalLearningWidget(QWidget):
         self._connection_text.setStyleSheet("""
             color: #334155;
             font-family: Inter;
-            font-size: 12px;
-            line-height: 1.4;
+            font-size: 12.5px;
+            line-height: 1.45;
         """)
         conn_layout.addWidget(self._connection_text)
         c_layout.addWidget(self._connection_box)
@@ -472,25 +477,25 @@ class PracticalLearningWidget(QWidget):
         self._apps_container = QWidget()
         self._apps_layout = QVBoxLayout(self._apps_container)
         self._apps_layout.setContentsMargins(0, 0, 0, 0)
-        self._apps_layout.setSpacing(8)
+        self._apps_layout.setSpacing(10)
 
         # Section Heading
         sec_header = QHBoxLayout()
-        sec_header.setSpacing(6)
+        sec_header.setSpacing(8)
         pill = QLabel("WHERE IS IT USED?")
         pill.setStyleSheet("""
             color: #7C3AED;
             background-color: #EDE9FE;
             font-family: Inter;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
             letter-spacing: 0.8px;
-            padding: 2px 7px;
-            border-radius: 5px;
+            padding: 3px 9px;
+            border-radius: 6px;
         """)
         sec_header.addWidget(pill)
-        lbl = QLabel("Real-World Software & Engineering Applications")
-        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 11.5px; font-weight: 500;")
+        lbl = QLabel("Industrial software, hardware, and engineering systems")
+        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12px; font-weight: 500;")
         sec_header.addWidget(lbl)
         sec_header.addStretch(1)
         self._apps_layout.addLayout(sec_header)
@@ -499,35 +504,35 @@ class PracticalLearningWidget(QWidget):
         self._apps_list_widget = QWidget()
         self._apps_list_layout = QVBoxLayout(self._apps_list_widget)
         self._apps_list_layout.setContentsMargins(0, 0, 0, 0)
-        self._apps_list_layout.setSpacing(8)
+        self._apps_list_layout.setSpacing(12)
         self._apps_layout.addWidget(self._apps_list_widget)
 
         self._content_layout.addWidget(self._apps_container)
 
     def _build_knowledge_check_section(self):
-        """Feature C: Quick Knowledge Check Section."""
+        """Feature C: Quick Knowledge Check Section ("Test Your Understanding")."""
         self._quiz_container = QWidget()
         self._quiz_layout = QVBoxLayout(self._quiz_container)
         self._quiz_layout.setContentsMargins(0, 0, 0, 0)
-        self._quiz_layout.setSpacing(8)
+        self._quiz_layout.setSpacing(10)
 
         # Section Heading
         sec_header = QHBoxLayout()
-        sec_header.setSpacing(6)
-        pill = QLabel("QUICK KNOWLEDGE CHECK")
+        sec_header.setSpacing(8)
+        pill = QLabel("TEST YOUR UNDERSTANDING")
         pill.setStyleSheet("""
             color: #059669;
             background-color: #D1FAE5;
             font-family: Inter;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
             letter-spacing: 0.8px;
-            padding: 2px 7px;
-            border-radius: 5px;
+            padding: 3px 9px;
+            border-radius: 6px;
         """)
         sec_header.addWidget(pill)
-        lbl = QLabel("Test your understanding of the concept & usage")
-        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 11.5px; font-weight: 500;")
+        lbl = QLabel("1–2 interactive questions on concept mechanics & practical utility")
+        lbl.setStyleSheet("color: #64748B; font-family: Inter; font-size: 12px; font-weight: 500;")
         sec_header.addWidget(lbl)
         sec_header.addStretch(1)
         self._quiz_layout.addLayout(sec_header)
@@ -536,7 +541,7 @@ class PracticalLearningWidget(QWidget):
         self._questions_widget = QWidget()
         self._questions_layout = QVBoxLayout(self._questions_widget)
         self._questions_layout.setContentsMargins(0, 0, 0, 0)
-        self._questions_layout.setSpacing(10)
+        self._questions_layout.setSpacing(14)
         self._quiz_layout.addWidget(self._questions_widget)
 
         self._content_layout.addWidget(self._quiz_container)
@@ -563,7 +568,6 @@ class PracticalLearningWidget(QWidget):
         self._connection_text.setText(data.practical_example.visualization_connection)
 
         # 3. Rebuild Real-World Applications Cards
-        # Clear existing
         while self._apps_list_layout.count():
             item = self._apps_list_layout.takeAt(0)
             if item.widget():
@@ -584,8 +588,16 @@ class PracticalLearningWidget(QWidget):
             self._questions_layout.addWidget(q_widget)
 
         # Scroll to top smoothly
+        self.scroll_to_top()
+
+    def scroll_to_top(self):
         if self._scroll:
             self._scroll.verticalScrollBar().setValue(0)
+
+    def scroll_to_quiz(self):
+        """Scroll smoothly to the Test Your Understanding section."""
+        if hasattr(self, "_quiz_container") and self._scroll:
+            QTimer.singleShot(50, lambda: self._scroll.ensureWidgetVisible(self._quiz_container))
 
     def _create_app_card(self, app: RealWorldApplication) -> QFrame:
         card = QFrame()
@@ -594,27 +606,27 @@ class PracticalLearningWidget(QWidget):
             QFrame#AppCard {
                 background-color: #FFFFFF;
                 border: 1px solid #E2E8F0;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(8)
 
         # Top row: Domain Tag + Title
         top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        top_row.setSpacing(10)
 
         tag_badge = QLabel(app.tag.upper())
         tag_badge.setStyleSheet("""
             background-color: #F1F5F9;
             color: #475569;
             font-family: Inter;
-            font-size: 9.5px;
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.5px;
-            padding: 2px 6px;
-            border-radius: 4px;
+            letter-spacing: 0.6px;
+            padding: 3px 8px;
+            border-radius: 5px;
         """)
         top_row.addWidget(tag_badge)
 
@@ -622,7 +634,7 @@ class PracticalLearningWidget(QWidget):
         title_lbl.setStyleSheet("""
             color: #0F172A;
             font-family: Inter;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 700;
         """)
         top_row.addWidget(title_lbl, stretch=1)
@@ -633,25 +645,135 @@ class PracticalLearningWidget(QWidget):
         desc_lbl.setStyleSheet("""
             color: #334155;
             font-family: Inter;
-            font-size: 12px;
-            line-height: 1.4;
+            font-size: 13px;
+            line-height: 1.5;
         """)
         layout.addWidget(desc_lbl)
 
         # Contexts / Software bullet points
         if app.contexts:
             ctx_box = QFrame()
-            ctx_box.setStyleSheet("background-color: #F8FAFC; border-radius: 6px; padding: 2px;")
+            ctx_box.setStyleSheet("background-color: #F8FAFC; border-radius: 8px; padding: 4px;")
             ctx_layout = QVBoxLayout(ctx_box)
-            ctx_layout.setContentsMargins(8, 6, 8, 6)
-            ctx_layout.setSpacing(3)
+            ctx_layout.setContentsMargins(12, 8, 12, 8)
+            ctx_layout.setSpacing(4)
 
             for ctx in app.contexts:
                 bullet = QLabel(f"•  {ctx}")
                 bullet.setWordWrap(True)
-                bullet.setStyleSheet("color: #475569; font-family: Inter; font-size: 11.5px; line-height: 1.35;")
+                bullet.setStyleSheet("color: #475569; font-family: Inter; font-size: 12.5px; line-height: 1.4;")
                 ctx_layout.addWidget(bullet)
 
             layout.addWidget(ctx_box)
 
         return card
+
+
+class PracticalLearningDialog(QDialog):
+    """
+    Dedicated, spacious overlay dialog displaying Practical Examples,
+    Real-World Applications, and Test Your Understanding.
+
+    Prevents sidebar overcrowding while giving students plenty of room
+    to read and interact without interrupting lesson playback.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("ProofMotion — Real-World Applications & Practical Guide")
+        self.setModal(False)
+        self.resize(780, 700)
+        self.setMinimumSize(640, 500)
+
+        # Clean white panel styling
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F8FAFC;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header Bar
+        header = QFrame()
+        header.setFixedHeight(64)
+        header.setStyleSheet("""
+            QFrame {
+                background-color: #FFFFFF;
+                border-bottom: 1.5px solid #E2E8F0;
+            }
+        """)
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(24, 0, 20, 0)
+        h_layout.setSpacing(12)
+
+        icon_badge = QLabel("💡")
+        icon_badge.setStyleSheet("font-size: 20px; background: transparent;")
+        h_layout.addWidget(icon_badge)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(1)
+        title_col.setAlignment(Qt.AlignVCenter)
+
+        title_lbl = QLabel("Practical Applications & Real-World Context")
+        title_lbl.setStyleSheet("""
+            color: #0F172A;
+            font-family: Inter;
+            font-size: 15px;
+            font-weight: 700;
+            background: transparent;
+        """)
+        sub_lbl = QLabel("Bridging theoretical mechanics with software & engineering systems")
+        sub_lbl.setStyleSheet("""
+            color: #64748B;
+            font-family: Inter;
+            font-size: 12px;
+            background: transparent;
+        """)
+        title_col.addWidget(title_lbl)
+        title_col.addWidget(sub_lbl)
+        h_layout.addLayout(title_col, stretch=1)
+
+        # Close button
+        self._close_btn = QPushButton("✕  Close")
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F1F5F9;
+                color: #475569;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                padding: 6px 14px;
+                font-family: Inter;
+                font-size: 12.5px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #E2E8F0;
+                color: #0F172A;
+            }
+        """)
+        self._close_btn.clicked.connect(self.close)
+        h_layout.addWidget(self._close_btn)
+
+        layout.addWidget(header)
+
+        # Embed PracticalLearningWidget
+        self.practical_widget = PracticalLearningWidget(self)
+        layout.addWidget(self.practical_widget, stretch=1)
+
+    def open_topic(self, topic_key: str, scroll_to_quiz: bool = False):
+        """Open dialog for the topic, optionally scrolling directly to the quiz."""
+        self.practical_widget.set_topic(topic_key)
+        if scroll_to_quiz:
+            self.practical_widget.scroll_to_quiz()
+        else:
+            self.practical_widget.scroll_to_top()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def set_topic(self, topic_key: str):
+        self.practical_widget.set_topic(topic_key)

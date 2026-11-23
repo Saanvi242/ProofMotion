@@ -327,8 +327,12 @@ class MainWindow(QMainWindow):
         self.equation_panel.setGraphicsEffect(sh_eq)
         body_layout.addWidget(self.equation_panel, stretch=1)
 
-        # Wire Real-World Applications request from HUD button to Parameter Panel
-        self.equation_panel.applicationsRequested.connect(self.parameter_panel.show_applications)
+        from ui.practical_learning_widget import PracticalLearningDialog
+        self.practical_dialog = PracticalLearningDialog(self)
+
+        # Wire Real-World Applications request from Parameter Panel and HUD to open the spacious overlay dialog
+        self.parameter_panel.exploreApplicationsRequested.connect(self._open_practical_dialog)
+        self.equation_panel.applicationsRequested.connect(self._open_practical_dialog_from_hud)
 
         self.playground_host = PlaygroundHost()
         self.playground_host.statusMessage.connect(self.set_status)
@@ -597,7 +601,7 @@ class MainWindow(QMainWindow):
 
         self.parameter_panel = ParameterPanel()
         self.parameter_panel.setMinimumWidth(280)
-        self.parameter_panel.setMaximumWidth(460)
+        self.parameter_panel.setMaximumWidth(360)
         sh_param = QGraphicsDropShadowEffect(self.parameter_panel)
         sh_param.setBlurRadius(20)
         sh_param.setColor(QColor(24, 32, 60, 22))
@@ -675,6 +679,18 @@ class MainWindow(QMainWindow):
 
     def set_clipping_tabs_visible(self, visible: bool):
         self.clipping_tab_bar.setVisible(visible)
+
+    def _open_practical_dialog(self, topic_key: str = "", scroll_to_quiz: bool = False):
+        if not topic_key and hasattr(self, "_controller"):
+            topic_key = getattr(self._controller, "current_topic_key", "")
+        if hasattr(self, "practical_dialog"):
+            self.practical_dialog.open_topic(topic_key, scroll_to_quiz=scroll_to_quiz)
+
+    def _open_practical_dialog_from_hud(self, is_final_step: bool = False):
+        topic_key = ""
+        if hasattr(self, "_controller"):
+            topic_key = getattr(self._controller, "current_topic_key", "")
+        self._open_practical_dialog(topic_key, scroll_to_quiz=is_final_step)
 
     def show_home(self):
         self.home_host.show_gateway()

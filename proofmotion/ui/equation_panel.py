@@ -60,11 +60,12 @@ def clean_math_text(text: str) -> str:
 
 
 class EquationPanel(QWidget):
-    applicationsRequested = pyqtSignal()
+    applicationsRequested = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Panel")
+        self._is_final_step = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(18, 10, 18, 10)
@@ -90,19 +91,19 @@ class EquationPanel(QWidget):
         self._metrics_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_row.addWidget(self._metrics_label)
 
-        self._apps_btn = QPushButton("Where is this used? ↗")
+        self._apps_btn = QPushButton("💡 Explore Applications ↗")
         self._apps_btn.setObjectName("AppsNavButton")
         self._apps_btn.setCursor(Qt.PointingHandCursor)
-        self._apps_btn.setToolTip("Explore practical examples, real-world applications, and knowledge check")
+        self._apps_btn.setToolTip("Explore practical examples, real-world engineering applications, and knowledge check")
         self._apps_btn.setStyleSheet("""
             QPushButton#AppsNavButton {
                 background-color: #F0EDFF;
                 color: #6C5CE7;
                 border: 1px solid #D5DDED;
                 border-radius: 6px;
-                padding: 3px 9px;
+                padding: 4px 10px;
                 font-family: Inter;
-                font-size: 11px;
+                font-size: 11.5px;
                 font-weight: 600;
             }
             QPushButton#AppsNavButton:hover {
@@ -111,7 +112,7 @@ class EquationPanel(QWidget):
                 border-color: #6C5CE7;
             }
         """)
-        self._apps_btn.clicked.connect(self.applicationsRequested.emit)
+        self._apps_btn.clicked.connect(lambda: self.applicationsRequested.emit(self._is_final_step))
         header_row.addWidget(self._apps_btn)
         outer.addLayout(header_row)
 
@@ -187,17 +188,18 @@ class EquationPanel(QWidget):
 
         # Update knowledge-check prompt on the final step
         if hasattr(self, "_apps_btn"):
-            if step_index_1based >= total_steps and total_steps > 1:
-                self._apps_btn.setText("✓ Lesson Complete • Check Understanding ↗")
+            self._is_final_step = (step_index_1based >= total_steps and total_steps > 1)
+            if self._is_final_step:
+                self._apps_btn.setText("✓ Lesson Complete • Test Your Understanding ↗")
                 self._apps_btn.setStyleSheet("""
                     QPushButton#AppsNavButton {
                         background-color: #ECFDF5;
                         color: #065F46;
                         border: 1.5px solid #10B981;
                         border-radius: 6px;
-                        padding: 3px 9px;
+                        padding: 4px 10px;
                         font-family: Inter;
-                        font-size: 11px;
+                        font-size: 11.5px;
                         font-weight: 700;
                     }
                     QPushButton#AppsNavButton:hover {
@@ -206,16 +208,16 @@ class EquationPanel(QWidget):
                     }
                 """)
             else:
-                self._apps_btn.setText("Where is this used? ↗")
+                self._apps_btn.setText("💡 Explore Applications ↗")
                 self._apps_btn.setStyleSheet("""
                     QPushButton#AppsNavButton {
                         background-color: #F0EDFF;
                         color: #6C5CE7;
                         border: 1px solid #D5DDED;
                         border-radius: 6px;
-                        padding: 3px 9px;
+                        padding: 4px 10px;
                         font-family: Inter;
-                        font-size: 11px;
+                        font-size: 11.5px;
                         font-weight: 600;
                     }
                     QPushButton#AppsNavButton:hover {
