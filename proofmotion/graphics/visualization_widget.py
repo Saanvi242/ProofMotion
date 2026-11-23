@@ -500,6 +500,8 @@ class VisualizationWidget(QWidget):
     # HUD / Overlay
     # ------------------------------------------------------------------
     def _draw_overlay_hud(self, painter: QPainter):
+        if getattr(self, "_hide_hud", False):
+            return
         painter.save()
         painter.setFont(get_mono_font(12, weight=400))
         painter.setPen(QPen(QColor(COLORS["text_muted"])))

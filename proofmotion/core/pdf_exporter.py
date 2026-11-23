@@ -20,7 +20,7 @@ import os
 import io
 import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -29,6 +29,7 @@ from reportlab.platypus import (
     KeepTogether, HRFlowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.pdfgen import canvas
 
 from PyQt5.QtWidgets import QApplication
@@ -158,24 +159,108 @@ class PDFExporter:
     def _get_viz_widget(self) -> VisualizationWidget:
         if self._viz_widget is None:
             self._viz_widget = VisualizationWidget()
-            self._viz_widget.resize(540, 200)
         return self._viz_widget
 
-    def capture_step_snapshot(self, topic_key: str, display_name: str, step_index: int, step: VisualizationStep) -> Optional[bytes]:
+    def get_topic_dimensions(self, topic_key: str, category: str, step: Optional[VisualizationStep] = None) -> Tuple[int, int]:
         """
-        Renders a single step using the offscreen VisualizationWidget and returns PNG bytes.
+        Calculates balanced, proportional dimensions (width_pt, height_pt) tailored
+        specifically to the topic and visualization content:
+        - Prevents vertical cramping in trees and search HUDs.
+        - Prevents excessive empty space in sorting arrays.
+        - Fits centered within the 540 pt letter page content width.
+        """
+        tk = (topic_key or "").lower()
+        cat = (category or "").lower()
+
+        # Sorting algorithms (horizontal array comparison / swap)
+        if cat == "sorting" or tk in (
+            "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"
+        ):
+            return 480, 140
+
+        # Searching algorithms (top target HUD + scanner rail + row of tiles + indices)
+        if cat == "searching" or tk in ("linear_search", "binary_search"):
+            return 490, 250
+
+        # Trees & Binary Search Trees (top HUD + 3-4 tree tiers + bottom traversal dock)
+        if cat == "trees" or tk.startswith("tree_") or tk.startswith("bst_"):
+            return 480, 310
+
+        # Graph algorithms (top context + nodes + edge weights + MST chip)
+        if cat == "graphs" or tk in (
+            "bfs", "dfs", "dijkstra", "prim_mst", "kruskal_mst", "topological_sort"
+        ):
+            return 470, 240
+
+        # Clipping (top insight / codes + clipping viewport window + decision strip)
+        if cat == "clipping" or tk.startswith("clip_"):
+            return 480, 260
+
+        # Rasterization (20x20 pixel grid)
+        if cat == "rasterization" or tk.startswith("rast_"):
+            return 440, 230
+
+        # 2D Transformations (Cartesian axes + original/transformed polygons)
+        if cat == "transformations" or tk.startswith("trans_"):
+            return 450, 220
+
+        # Geometric Theorems
+        if cat == "theorems" or tk in (
+            "pythagorean", "circle_area", "similar_triangles", "law_of_cosines"
+        ):
+            return 450, 220
+
+        # Curves & Splines
+        if cat == "curves" or tk.startswith("curve_") or tk in (
+            "bezier_cubic", "bezier_quadratic", "b_spline"
+        ):
+            return 460, 220
+
+        # Default fallback
+        return 470, 220
+
+    def capture_step_snapshot(
+        self,
+        topic_key: str,
+        display_name: str,
+        step_index: int,
+        step: VisualizationStep,
+        width_pt: int = 480,
+        height_pt: int = 200
+    ) -> Optional[bytes]:
+        """
+        Renders a single step using the offscreen VisualizationWidget at high resolution (2.5x)
+        with settled animation states and returns crisp PNG bytes.
         Returns None gracefully if rendering is unsupported.
         """
         try:
             widget = self._get_viz_widget()
+            widget._hide_hud = True
+            widget.resize(width_pt, height_pt)
             widget.set_theorem(topic_key, display_name)
+            widget.reset_view()
             widget.update_step(step_index, step.values, step.render_data)
 
-            pixmap = QPixmap(540, 200)
+            # Ensure animation is completely settled at final step state
+            if hasattr(widget, "_anim_timer") and widget._anim_timer.isActive():
+                widget._anim_timer.stop()
+            widget._anim_progress = 1.0
+            if hasattr(widget, "_sorting_renderer"):
+                widget._sorting_renderer.progress = 1.0
+
+            # 2.5x High-DPI resolution for crisp, publication-quality print
+            scale_factor = 2.5
+            px_w = max(10, int(width_pt * scale_factor))
+            px_h = max(10, int(height_pt * scale_factor))
+
+            pixmap = QPixmap(px_w, px_h)
             pixmap.fill(Qt.white)
 
             painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            painter.scale(scale_factor, scale_factor)
             widget.render(painter)
             painter.end()
 
@@ -301,6 +386,16 @@ class PDFExporter:
             fontSize=9,
             leading=12,
             textColor=colors.HexColor("#0F172A")
+        )
+
+        fig_caption_style = ParagraphStyle(
+            "FigCaption",
+            parent=base_styles["Normal"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11.5,
+            textColor=colors.HexColor("#475569"),
+            alignment=TA_CENTER
         )
 
         story = []
@@ -430,19 +525,53 @@ class PDFExporter:
                     ]))
                     step_elements.append(m_table)
 
-            # Visualization Snapshot (clean image offscreen rendering)
-            snapshot_bytes = self.capture_step_snapshot(topic_key, display_name, idx, step)
+            # Visualization Snapshot (clean, high-resolution offscreen rendering)
+            w_pt, h_pt = self.get_topic_dimensions(topic_key, category, step)
+            snapshot_bytes = self.capture_step_snapshot(
+                topic_key=topic_key,
+                display_name=display_name,
+                step_index=idx,
+                step=step,
+                width_pt=w_pt,
+                height_pt=h_pt
+            )
             if snapshot_bytes:
                 img_io = io.BytesIO(snapshot_bytes)
-                img_flowable = Image(img_io, width=540, height=180)
-                step_elements.append(Spacer(1, 4))
-                step_elements.append(img_flowable)
+                img_flowable = Image(img_io, width=w_pt, height=h_pt)
 
-            step_elements.append(Spacer(1, 14))
-            # Try to keep step header and its immediate content together
-            story.append(KeepTogether(step_elements[:3]))
-            for rem in step_elements[3:]:
-                story.append(rem)
+                caption_text = f"<font color='#6C5CE7'><b>Step {step_idx_1based} Visualization:</b></font> {escape_pdf_text(title)}"
+                caption_para = Paragraph(caption_text, fig_caption_style)
+
+                # Centered, styled educational figure card
+                card_table = Table([[img_flowable], [caption_para]], colWidths=[w_pt], hAlign='CENTER')
+                card_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FAFBFE")),
+                    ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor("#CBD5E1")),
+                    ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor("#E2E8F0")),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING', (0, 0), (-1, 0), 0),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 0),
+                    ('LEFTPADDING', (0, 0), (-1, 0), 0),
+                    ('RIGHTPADDING', (0, 0), (-1, 0), 0),
+                    ('TOPPADDING', (0, 1), (-1, 1), 4),
+                    ('BOTTOMPADDING', (0, 1), (-1, 1), 5),
+                    ('LEFTPADDING', (0, 1), (-1, 1), 8),
+                    ('RIGHTPADDING', (0, 1), (-1, 1), 8),
+                ]))
+                step_elements.append(Spacer(1, 4))
+                step_elements.append(card_table)
+
+            step_elements.append(Spacer(1, 12))
+
+            # Group heading, equation, explanation and visualization together
+            total_step_h = h_pt + (40 if eq else 0) + (len(expl) // 40) * 14 + 110
+            if total_step_h > 620:
+                story.append(KeepTogether(step_elements[:4]))
+                for rem in step_elements[4:]:
+                    story.append(rem)
+            else:
+                story.append(KeepTogether(step_elements))
 
         # -------------------------------------------------------------
         # 4. Final Result & Complexity Summary
