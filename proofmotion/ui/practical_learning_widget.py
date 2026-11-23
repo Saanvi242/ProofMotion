@@ -793,6 +793,9 @@ class KnowledgeCheckWidget(QWidget):
         self._selected_opt_index = -1
         self._question_graded = False
 
+        if hasattr(self, "_scroll") and self._scroll:
+            self._scroll.verticalScrollBar().setValue(0)
+
         q = self._questions[index]
         self._progress_badge.setText(f"Question {index + 1} of {len(self._questions)}")
         self._prompt_label.setText(f"Q{index + 1}.  {q.question}")

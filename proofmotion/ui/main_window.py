@@ -596,8 +596,8 @@ class MainWindow(QMainWindow):
         splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
 
         self.theorem_panel = TheoremPanel(theorems)
-        self.theorem_panel.setMinimumWidth(205)
-        self.theorem_panel.setMaximumWidth(280)
+        self.theorem_panel.setMinimumWidth(215)
+        self.theorem_panel.setMaximumWidth(380)
         sh_thm = QGraphicsDropShadowEffect(self.theorem_panel)
         sh_thm.setBlurRadius(20)
         sh_thm.setColor(QColor(24, 32, 60, 22))
@@ -607,8 +607,8 @@ class MainWindow(QMainWindow):
         viz_container = self._build_visualization_container()
 
         self.parameter_panel = ParameterPanel()
-        self.parameter_panel.setMinimumWidth(280)
-        self.parameter_panel.setMaximumWidth(360)
+        self.parameter_panel.setMinimumWidth(260)
+        self.parameter_panel.setMaximumWidth(750)
         sh_param = QGraphicsDropShadowEffect(self.parameter_panel)
         sh_param.setBlurRadius(20)
         sh_param.setColor(QColor(24, 32, 60, 22))

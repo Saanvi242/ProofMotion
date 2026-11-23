@@ -653,7 +653,7 @@ class ParameterPanel(QWidget):
 
             edit = QLineEdit(self._format_default(spec.default))
             edit.setObjectName("ArrayCardInput")
-            edit.setFixedHeight(34)
+            edit.setFixedHeight(38)
             if spec.key == "custom_edges":
                 edit.setPlaceholderText("e.g. A-B:4, B-C:2, C-A:5")
                 count_badge.setText("Optional")
@@ -715,7 +715,7 @@ class ParameterPanel(QWidget):
 
         edit = QLineEdit(self._format_default(spec.default))
         edit.setObjectName("ParamInput")
-        edit.setFixedHeight(28 if is_paired else 32)
+        edit.setFixedHeight(30 if is_paired else 34)
         edit.setAlignment(Qt.AlignCenter)
         if is_paired:
             edit.setFixedWidth(50)

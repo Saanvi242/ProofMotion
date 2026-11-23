@@ -626,7 +626,7 @@ def build_stylesheet() -> str:
         color: {c['text_primary']};
         font-size: {TYPOGRAPHY['input']}px;
         font-weight: 400;
-        padding: 5px 9px;
+        padding: 3px 8px;
         selection-background-color: {c['accent_gold']};
     }}
     #ParamInput:focus {{
@@ -691,7 +691,7 @@ def build_stylesheet() -> str:
         font-family: {FONT_FAMILY_MONO};
         font-size: {TYPOGRAPHY['input']}px;
         font-weight: 400;
-        padding: 6px 10px;
+        padding: 4px 10px;
     }}
     #ArrayCardInput:focus {{
         background-color: #FFFFFF;

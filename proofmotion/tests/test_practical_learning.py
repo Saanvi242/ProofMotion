@@ -55,8 +55,8 @@ class TestPracticalLearningContent(unittest.TestCase):
                 self.assertTrue(len(app_item.title) > 3)
                 self.assertTrue(len(app_item.description) > 15)
                 self.assertGreaterEqual(len(app_item.contexts), 1)
-            # Verify knowledge check questions
-            self.assertGreaterEqual(len(data.knowledge_check), 1)
+            # Verify knowledge check questions (3 to 5 questions per topic)
+            self.assertTrue(3 <= len(data.knowledge_check) <= 5)
             for q in data.knowledge_check:
                 self.assertTrue(len(q.question) > 10)
                 self.assertEqual(len(q.options), 4)
