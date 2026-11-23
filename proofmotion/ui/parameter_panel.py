@@ -1,33 +1,18 @@
-"""
-ui/parameter_panel.py
------------------------
-Right sidebar: Redesigned dynamic parameter inspector.
-
-Features:
-- High-contrast, large, clearly readable typography (eliminating camouflage).
-- Precision steppers [ − ] [ Value ] [ + ] with direct typing, replacing fiddly sliders.
-- One-click Quick Presets & Exploration Chips for instant pedagogical testing.
-- Side-by-side 2-column layout for paired coordinates (dx/dy, sx/sy, side_a/side_b, etc.).
-- Clearly styled Primary Apply button.
-- Separate Reset Defaults button.
-"""
-
 from typing import Dict, List, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QComboBox, QFrame, QScrollArea, QSizePolicy, QLayout, QSlider,
+    QStackedWidget,
 )
 from PyQt5.QtGui import QRegExpValidator, QIntValidator
 from PyQt5.QtCore import Qt, pyqtSignal, QRegExp, QPoint, QRect, QSize
 
 from models.theorem_state import ParameterSpec, ParameterType
+from ui.practical_learning_widget import PracticalLearningWidget
 
 
 class FlowLayout(QLayout):
-    """
-    A custom PyQt layout that arranges child widgets horizontally,
-    wrapping them to the next line dynamically when available width is exceeded.
-    """
+    
     def __init__(self, parent=None, margin=0, h_spacing=6, v_spacing=6):
         super().__init__(parent)
         if parent is not None:
@@ -323,22 +308,45 @@ class ParameterPanel(QWidget):
         self._active_theorem = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 16, 16, 14)
-        outer.setSpacing(12)
+        outer.setContentsMargins(14, 14, 14, 12)
+        outer.setSpacing(10)
 
-        # Header Title
-        title_row = QHBoxLayout()
-        title = QLabel("Explore parameters")
-        title.setObjectName("PanelTitle")
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        outer.addLayout(title_row)
+        # Segmented Tab Switcher: [ Parameters ]  [ Where Is It Used? ]
+        self._panel_tab_bar = QWidget()
+        self._panel_tab_bar.setObjectName("ParameterPanelTabBar")
+        tab_row = QHBoxLayout(self._panel_tab_bar)
+        tab_row.setContentsMargins(0, 0, 0, 0)
+        tab_row.setSpacing(6)
+
+        self._tab_params_btn = QPushButton("Parameters")
+        self._tab_params_btn.setObjectName("PanelSegmentBtn")
+        self._tab_params_btn.setCursor(Qt.PointingHandCursor)
+        self._tab_params_btn.setCheckable(True)
+        self._tab_params_btn.setChecked(True)
+        self._tab_params_btn.setProperty("selected", "true")
+        self._tab_params_btn.clicked.connect(self.show_parameters)
+        tab_row.addWidget(self._tab_params_btn, stretch=1)
+
+        self._tab_apps_btn = QPushButton("Where Is It Used? 💡")
+        self._tab_apps_btn.setObjectName("PanelSegmentBtn")
+        self._tab_apps_btn.setCursor(Qt.PointingHandCursor)
+        self._tab_apps_btn.setCheckable(True)
+        self._tab_apps_btn.setChecked(False)
+        self._tab_apps_btn.setProperty("selected", "false")
+        self._tab_apps_btn.clicked.connect(self.show_applications)
+        tab_row.addWidget(self._tab_apps_btn, stretch=1)
+
+        outer.addWidget(self._panel_tab_bar)
 
         divider = QWidget()
         divider.setObjectName("PanelDivider")
         outer.addWidget(divider)
 
-        # Scrollable container for parameters, presets & actions
+        # Tab Stack hosting Page 0 (Parameters) and Page 1 (Practical Learning & Quiz)
+        self._tab_stack = QStackedWidget()
+        self._tab_stack.setObjectName("ParameterPanelTabStack")
+
+        # Scrollable container for parameters, presets & actions (Page 0)
         self._scroll = QScrollArea()
         self._scroll.setObjectName("ParamScrollArea")
         self._scroll.setWidgetResizable(True)
@@ -400,8 +408,41 @@ class ParameterPanel(QWidget):
         self._fields_layout.addStretch(1)
 
         self._scroll.setWidget(self._fields_container)
-        outer.addWidget(self._scroll, stretch=1)
+        self._tab_stack.addWidget(self._scroll)  # Page 0
+
+        # Page 1: Practical Learning & Real-World Applications Widget
+        self.practical_widget = PracticalLearningWidget()
+        self._tab_stack.addWidget(self.practical_widget)  # Page 1
+
+        outer.addWidget(self._tab_stack, stretch=1)
         self._set_empty_state()
+
+    def show_parameters(self):
+        """Switch to the Parameters & Presets tab."""
+        self._tab_stack.setCurrentIndex(0)
+        self._tab_params_btn.setChecked(True)
+        self._tab_params_btn.setProperty("selected", "true")
+        self._tab_apps_btn.setChecked(False)
+        self._tab_apps_btn.setProperty("selected", "false")
+        self._update_tab_button_styles()
+
+    def show_applications(self):
+        """Switch to the Practical Learning & Real-World Applications tab."""
+        self._tab_stack.setCurrentIndex(1)
+        self._tab_params_btn.setChecked(False)
+        self._tab_params_btn.setProperty("selected", "false")
+        self._tab_apps_btn.setChecked(True)
+        self._tab_apps_btn.setProperty("selected", "true")
+        self._update_tab_button_styles()
+        if self._active_theorem:
+            topic_key = getattr(self._active_theorem, "key", "")
+            self.practical_widget.set_topic(topic_key)
+
+    def _update_tab_button_styles(self):
+        for btn in (self._tab_params_btn, self._tab_apps_btn):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
 
     # ------------------------------------------------------------------
     # Public API
@@ -447,10 +488,8 @@ class ParameterPanel(QWidget):
             theme_section = self._build_sorting_styles_section()
             self._params_layout.addWidget(theme_section)
 
-        # 4. Clipping lesson now-card (Cohen–Sutherland and Sutherland–Hodgman)
+        # 4. Clipping lesson controls
         if topic_key in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
-            walkthrough_section = self._build_clipping_walkthrough_section()
-            self._params_layout.addWidget(walkthrough_section)
             combo = self._inputs.get("polygon_shape")
             if isinstance(combo, QComboBox):
                 combo.activated.connect(lambda *_: self._on_apply_clicked())
@@ -460,6 +499,10 @@ class ParameterPanel(QWidget):
             curve_section = self._build_curve_walkthrough_section()
             self._params_layout.addWidget(curve_section)
 
+
+        # Update Practical Learning Widget with the current topic
+        if hasattr(self, "practical_widget") and topic_key:
+            self.practical_widget.set_topic(topic_key)
 
         self._hide_error()
         self._action_widget.show()
@@ -894,18 +937,22 @@ class ParameterPanel(QWidget):
 
     def set_clipping_lesson_tab(self, tab_key: str):
         self._clip_lesson_tab = tab_key or ""
-        if not getattr(self, "_clip_walkthrough", None):
-            return
         is_regions = tab_key == "region_codes"
         is_clip_line = tab_key == "clip_line"
         is_cases = tab_key == "four_cases"
         is_clip_poly = tab_key == "clip_polygon"
-        self._clip_walkthrough.setVisible(is_regions or is_clip_line or is_cases or is_clip_poly)
 
         topic = getattr(self._active_theorem, "key", "") if self._active_theorem else ""
         if getattr(self, "_preset_section", None) and topic == "clip_sutherland_hodgman":
             self._preset_section.setVisible(is_clip_poly)
         self._set_param_field_visible("polygon_shape", is_clip_poly)
+
+        # The clipping walkthrough card is intentionally omitted from the UI.
+        # Keep tab-specific parameter visibility working without that card.
+        if not getattr(self, "_clip_walkthrough", None):
+            return
+
+        self._clip_walkthrough.setVisible(is_regions or is_clip_line or is_cases or is_clip_poly)
 
         if is_regions:
             self._clip_card_title.setText("REGION CODES")

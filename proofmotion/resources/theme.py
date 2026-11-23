@@ -491,6 +491,41 @@ def build_stylesheet() -> str:
         background-color: transparent;
         border: none;
     }}
+    #PanelSegmentBtn {{
+        background-color: #F1F5F9;
+        color: #475569;
+        border: 1px solid #CBD5E1;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-family: Inter;
+        font-size: 11.5px;
+        font-weight: 600;
+        min-height: 28px;
+    }}
+    #PanelSegmentBtn:hover {{
+        background-color: #E2E8F0;
+        color: #0F172A;
+    }}
+    #PanelSegmentBtn[selected="true"] {{
+        background-color: #6C5CE7;
+        border-color: #5B4AC7;
+        color: #FFFFFF;
+    }}
+    #AppsNavButton {{
+        background-color: #F0EDFF;
+        color: #6C5CE7;
+        border: 1px solid #D5DDED;
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-family: Inter;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    #AppsNavButton:hover {{
+        background-color: #6C5CE7;
+        color: #FFFFFF;
+        border-color: #6C5CE7;
+    }}
     #PanelTitle {{
         color: #0F172A;
         font-size: {TYPOGRAPHY['panel_title']}px;

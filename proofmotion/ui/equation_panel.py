@@ -6,8 +6,8 @@ intermediate metrics, and pedagogical explanation narrative.
 """
 
 import re
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QPushButton
+from PyQt5.QtCore import Qt, pyqtSignal
 
 
 def clean_math_text(text: str) -> str:
@@ -60,6 +60,8 @@ def clean_math_text(text: str) -> str:
 
 
 class EquationPanel(QWidget):
+    applicationsRequested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Panel")
@@ -68,7 +70,7 @@ class EquationPanel(QWidget):
         outer.setContentsMargins(18, 10, 18, 10)
         outer.setSpacing(6)
 
-        # Header row: StepBadge on left, StepTitle, MetricBadge on right
+        # Header row: StepBadge on left, StepTitle, MetricBadge on right, Where-Is-It-Used button
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(10)
@@ -87,6 +89,30 @@ class EquationPanel(QWidget):
         self._metrics_label.setObjectName("ParamHint")
         self._metrics_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_row.addWidget(self._metrics_label)
+
+        self._apps_btn = QPushButton("Where is this used? ↗")
+        self._apps_btn.setObjectName("AppsNavButton")
+        self._apps_btn.setCursor(Qt.PointingHandCursor)
+        self._apps_btn.setToolTip("Explore practical examples, real-world applications, and knowledge check")
+        self._apps_btn.setStyleSheet("""
+            QPushButton#AppsNavButton {
+                background-color: #F0EDFF;
+                color: #6C5CE7;
+                border: 1px solid #D5DDED;
+                border-radius: 6px;
+                padding: 3px 9px;
+                font-family: Inter;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QPushButton#AppsNavButton:hover {
+                background-color: #6C5CE7;
+                color: #FFFFFF;
+                border-color: #6C5CE7;
+            }
+        """)
+        self._apps_btn.clicked.connect(self.applicationsRequested.emit)
+        header_row.addWidget(self._apps_btn)
         outer.addLayout(header_row)
 
         divider = QWidget()
@@ -158,6 +184,46 @@ class EquationPanel(QWidget):
         else:
             self._metrics_label.setText("")
         self._result_label.hide()
+
+        # Update knowledge-check prompt on the final step
+        if hasattr(self, "_apps_btn"):
+            if step_index_1based >= total_steps and total_steps > 1:
+                self._apps_btn.setText("✓ Lesson Complete • Check Understanding ↗")
+                self._apps_btn.setStyleSheet("""
+                    QPushButton#AppsNavButton {
+                        background-color: #ECFDF5;
+                        color: #065F46;
+                        border: 1.5px solid #10B981;
+                        border-radius: 6px;
+                        padding: 3px 9px;
+                        font-family: Inter;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+                    QPushButton#AppsNavButton:hover {
+                        background-color: #10B981;
+                        color: #FFFFFF;
+                    }
+                """)
+            else:
+                self._apps_btn.setText("Where is this used? ↗")
+                self._apps_btn.setStyleSheet("""
+                    QPushButton#AppsNavButton {
+                        background-color: #F0EDFF;
+                        color: #6C5CE7;
+                        border: 1px solid #D5DDED;
+                        border-radius: 6px;
+                        padding: 3px 9px;
+                        font-family: Inter;
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
+                    QPushButton#AppsNavButton:hover {
+                        background-color: #6C5CE7;
+                        color: #FFFFFF;
+                        border-color: #6C5CE7;
+                    }
+                """)
 
     def _format_explanation_html(self, text: str) -> str:
         if not text:

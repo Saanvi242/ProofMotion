@@ -1,10 +1,3 @@
-"""
-ui/main_window.py
--------------------
-Top-level QMainWindow: Learn/Studio gateway, topic catalog, lesson
-workspace, and Studio playground.
-"""
-
 import os
 
 from PyQt5.QtWidgets import (
@@ -334,6 +327,9 @@ class MainWindow(QMainWindow):
         self.equation_panel.setGraphicsEffect(sh_eq)
         body_layout.addWidget(self.equation_panel, stretch=1)
 
+        # Wire Real-World Applications request from HUD button to Parameter Panel
+        self.equation_panel.applicationsRequested.connect(self.parameter_panel.show_applications)
+
         self.playground_host = PlaygroundHost()
         self.playground_host.statusMessage.connect(self.set_status)
         self.playground_host.fullscreenToggled.connect(self.toggle_canvas_fullscreen)
@@ -601,7 +597,7 @@ class MainWindow(QMainWindow):
 
         self.parameter_panel = ParameterPanel()
         self.parameter_panel.setMinimumWidth(280)
-        self.parameter_panel.setMaximumWidth(360)
+        self.parameter_panel.setMaximumWidth(460)
         sh_param = QGraphicsDropShadowEffect(self.parameter_panel)
         sh_param.setBlurRadius(20)
         sh_param.setColor(QColor(24, 32, 60, 22))
