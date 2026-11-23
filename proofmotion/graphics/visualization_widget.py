@@ -20,7 +20,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal, QTimer
 from PyQt5.QtGui import (
-    QPainter, QPen, QBrush, QColor, QFont, QPolygonF, QImage, QPainterPath
+    QPainter, QPen, QBrush, QColor, QFont, QPolygonF, QImage, QPainterPath, QLinearGradient
 )
 
 import resources.theme as theme
@@ -478,7 +478,9 @@ class VisualizationWidget(QWidget):
         rd = self._render_data
         mode = rd.mode if rd else "geometry"
 
-        if rd and getattr(rd, "tree_data", None) is not None:
+        if rd and getattr(rd, "comparison_data", None) is not None:
+            self._draw_comparison(painter, rd.comparison_data)
+        elif rd and getattr(rd, "tree_data", None) is not None:
             self._draw_tree(painter, rd.tree_data)
         elif rd and getattr(rd, "graph_data", None) is not None:
             self._draw_graph(painter, rd.graph_data)
@@ -520,10 +522,12 @@ class VisualizationWidget(QWidget):
         is_clipping = bool(self._render_data and self._render_data.mode == "clipping")
         is_algorithms = bool(
             getattr(self, "_theorem_key", "") in (
-                "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort", "linear_search", "binary_search"
+                "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort",
+                "linear_search", "binary_search", "compare_sorting", "compare_searching"
             )
             or (self._render_data and (
-                self._render_data.mode == "bars"
+                self._render_data.mode in ("bars", "comparison")
+                or getattr(self._render_data, "comparison_data", None) is not None
                 or getattr(self._render_data, "search_data", None) is not None
                 or getattr(self._render_data, "sort_event", None) is not None
                 or getattr(self._render_data, "tree_data", None) is not None
@@ -1662,6 +1666,338 @@ class VisualizationWidget(QWidget):
                     painter.setFont(get_mono_font(12, weight=600))
                     painter.setPen(QPen(QColor(COLORS["accent_blue"])))
                     painter.drawText(QRectF(tx - 20, ty + tile_h + 24, tile_w + 40, 16), Qt.AlignCenter, "▲ HIGH")
+
+        painter.restore()
+
+    # ------------------------------------------------------------------
+    # Side-by-Side Algorithm Comparison Mode
+    # ------------------------------------------------------------------
+    def _draw_comparison(self, painter: QPainter, comp: dict):
+        w, h = float(self.width()), float(self.height())
+        comp_type = comp.get("type", "sorting")
+        algo_1 = comp.get("algo_1", {})
+        algo_2 = comp.get("algo_2", {})
+        summary = comp.get("summary", {})
+
+        margin_x = 16.0
+        margin_top = 16.0
+        is_finished = summary.get("is_finished", False)
+        margin_bottom = 52.0 if is_finished else 16.0
+        gap = 18.0
+
+        avail_w = max(240.0, w - 2 * margin_x - gap)
+        card_w = avail_w / 2.0
+        card_h = max(200.0, h - margin_top - margin_bottom)
+
+        # 1. Left Card (Algorithm 1)
+        rect_1 = QRectF(margin_x, margin_top, card_w, card_h)
+        self._draw_comparison_card(painter, rect_1, algo_1, comp_type, 1)
+
+        # 2. Right Card (Algorithm 2)
+        rect_2 = QRectF(margin_x + card_w + gap, margin_top, card_w, card_h)
+        self._draw_comparison_card(painter, rect_2, algo_2, comp_type, 2)
+
+        # 3. Center "VS" Badge
+        vs_cx = margin_x + card_w + gap / 2.0
+        vs_cy = margin_top + 42.0
+        vs_radius = 16.0
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
+        vs_grad = QLinearGradient(vs_cx - vs_radius, vs_cy - vs_radius, vs_cx + vs_radius, vs_cy + vs_radius)
+        vs_grad.setColorAt(0.0, QColor("#8B5CF6"))
+        vs_grad.setColorAt(1.0, QColor("#6C5CE7"))
+        painter.setBrush(QBrush(vs_grad))
+        painter.drawEllipse(QPointF(vs_cx, vs_cy), vs_radius, vs_radius)
+        painter.setFont(get_ui_font(10, weight=700))
+        painter.setPen(QPen(QColor("#FFFFFF")))
+        painter.drawText(QRectF(vs_cx - vs_radius, vs_cy - vs_radius, vs_radius * 2, vs_radius * 2),
+                         Qt.AlignCenter, "VS")
+        painter.restore()
+
+        # 4. Celebratory Winner Verdict Banner when finished
+        if is_finished:
+            winner_name = summary.get("winner", "Even")
+            ratio = summary.get("ratio", "1.0×")
+            banner_h = 36.0
+            banner_y = h - margin_bottom + 8.0
+            banner_rect = QRectF(margin_x, banner_y, w - 2 * margin_x, banner_h)
+
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(QPen(QColor("#10B981"), 1.2))
+            b_grad = QLinearGradient(banner_rect.topLeft(), banner_rect.bottomRight())
+            b_grad.setColorAt(0.0, QColor("#ECFDF5"))
+            b_grad.setColorAt(1.0, QColor("#D1FAE5"))
+            painter.setBrush(QBrush(b_grad))
+            painter.drawRoundedRect(banner_rect, 8.0, 8.0)
+
+            painter.setFont(get_ui_font(12, weight=700))
+            painter.setPen(QPen(QColor("#065F46")))
+            verdict_text = f"🏆  {winner_name} Finished Faster ({ratio} fewer operations on this input)"
+            painter.drawText(banner_rect, Qt.AlignCenter, verdict_text)
+            painter.restore()
+
+    def _draw_comparison_card(self, painter: QPainter, rect: QRectF, algo: dict, comp_type: str, side_num: int):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setClipRect(rect)
+
+        is_done = algo.get("done", False)
+        border_color = QColor("#10B981") if is_done else QColor("#E2E8F0")
+
+        # White Card Background
+        painter.setPen(QPen(border_color, 1.5 if is_done else 1.0))
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        painter.drawRoundedRect(rect, 10.0, 10.0)
+
+        # Header: Name, Complexity, Status
+        hdr_y = rect.top() + 12.0
+        name = algo.get("name", "Algorithm")
+        complexity = algo.get("complexity", "O(n²)")
+        cmps = algo.get("comparisons", 0)
+        swaps = algo.get("swaps", 0)
+        step = algo.get("step", 1)
+        tot_steps = algo.get("total_steps", 1)
+
+        # Algorithm Title
+        painter.setFont(get_ui_font(14, weight=700))
+        painter.setPen(QPen(QColor("#0F172A")))
+        painter.drawText(QRectF(rect.left() + 14, hdr_y, rect.width() - 28, 20),
+                         Qt.AlignLeft | Qt.AlignVCenter, name)
+
+        # Complexity pill
+        c_pill_x = rect.left() + 14
+        c_pill_y = hdr_y + 24.0
+        comp_badge_w = 78.0
+        painter.setFont(get_mono_font(10.5, weight=600))
+        painter.setPen(Qt.NoPen)
+        bg_col = QColor("#EDE9FE") if "log" in complexity else (QColor("#FEE2E2") if "²" in complexity else QColor("#E0F2FE"))
+        fg_col = QColor("#6D28D9") if "log" in complexity else (QColor("#B91C1C") if "²" in complexity else QColor("#0369A1"))
+        painter.setBrush(QBrush(bg_col))
+        painter.drawRoundedRect(QRectF(c_pill_x, c_pill_y, comp_badge_w, 20), 4, 4)
+        painter.setPen(QPen(fg_col))
+        painter.drawText(QRectF(c_pill_x, c_pill_y, comp_badge_w, 20), Qt.AlignCenter, complexity)
+
+        # Status badge (right-aligned)
+        if is_done:
+            st_bg = QColor("#ECFDF5")
+            st_fg = QColor("#065F46")
+            st_label = "Completed ✓"
+        else:
+            st_bg = QColor("#F1F5F9")
+            st_fg = QColor("#475569")
+            st_label = f"Step {step}/{tot_steps}"
+
+        st_w = 95.0
+        st_x = rect.right() - 14.0 - st_w
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(st_bg))
+        painter.drawRoundedRect(QRectF(st_x, c_pill_y, st_w, 20), 4, 4)
+        painter.setPen(QPen(st_fg))
+        painter.setFont(get_ui_font(10, weight=600))
+        painter.drawText(QRectF(st_x, c_pill_y, st_w, 20), Qt.AlignCenter, st_label)
+
+        # Metric Pills Row
+        metric_y = c_pill_y + 26.0
+        pill_gap = 6.0
+        pill_w = (rect.width() - 28.0 - 2 * pill_gap) / 3.0
+
+        self._draw_mini_metric_pill(painter, rect.left() + 14, metric_y, pill_w, 24, "Comparisons", str(cmps), "#3B82F6")
+        if comp_type == "sorting":
+            self._draw_mini_metric_pill(painter, rect.left() + 14 + pill_w + pill_gap, metric_y, pill_w, 24, "Swaps/Writes", str(swaps), "#F59E0B")
+        else:
+            self._draw_mini_metric_pill(painter, rect.left() + 14 + pill_w + pill_gap, metric_y, pill_w, 24, "Target", str(algo.get("search_data", {}).get("target", "")), "#8B5CF6")
+        self._draw_mini_metric_pill(painter, rect.left() + 14 + 2 * (pill_w + pill_gap), metric_y, pill_w, 24, "Space", algo.get("space", "O(1)"), "#10B981")
+
+        # Inner Graphic Area
+        inner_top = metric_y + 36.0
+        inner_h = rect.bottom() - inner_top - 12.0
+        inner_rect = QRectF(rect.left() + 12, inner_top, rect.width() - 24, inner_h)
+
+        if comp_type == "sorting":
+            bars = algo.get("bars", [])
+            self._draw_comparison_bars(painter, inner_rect, bars, is_done)
+        else:
+            search_data = algo.get("search_data", {})
+            self._draw_comparison_search(painter, inner_rect, search_data, is_done)
+
+        painter.restore()
+
+    def _draw_mini_metric_pill(self, painter: QPainter, x: float, y: float, w: float, h: float,
+                               label: str, value: str, color_hex: str):
+        painter.save()
+        rect = QRectF(x, y, w, h)
+        c = QColor(color_hex)
+        bg_c = QColor(c.red(), c.green(), c.blue(), 20)
+        border_c = QColor(c.red(), c.green(), c.blue(), 75)
+
+        painter.setPen(QPen(border_c, 1.0))
+        painter.setBrush(QBrush(bg_c))
+        painter.drawRoundedRect(rect, 4.0, 4.0)
+
+        painter.setFont(get_ui_font(9.5, weight=500))
+        painter.setPen(QPen(QColor(COLORS["text_secondary"])))
+        painter.drawText(QRectF(x + 5, y, w * 0.58, h), Qt.AlignLeft | Qt.AlignVCenter, label)
+
+        painter.setFont(get_mono_font(10.5, weight=700))
+        painter.setPen(QPen(c))
+        painter.drawText(QRectF(x + w * 0.55, y, w * 0.45 - 5, h), Qt.AlignRight | Qt.AlignVCenter, value)
+        painter.restore()
+
+    def _draw_comparison_bars(self, painter: QPainter, rect: QRectF, bars: list, is_done: bool):
+        n = len(bars)
+        if n == 0:
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        avail_w = rect.width()
+        avail_h = rect.height()
+
+        bar_spacing = max(2.0, min(8.0, avail_w / (n * 5.0)))
+        bar_w = (avail_w - (n - 1) * bar_spacing) / max(1, n)
+        max_val = max([b.get("val", 1) for b in bars] or [1])
+
+        base_y = rect.bottom() - 32.0
+
+        for i in range(n):
+            b = bars[i]
+            val = b.get("val", 0)
+            tag = b.get("tag", "")
+
+            bar_h = max(14.0, (val / max(1, max_val)) * (avail_h - 60.0))
+            bx = rect.left() + i * (bar_w + bar_spacing)
+            by = base_y - bar_h
+
+            if is_done or tag == "SORTED":
+                c_base = QColor(COLORS["success"])
+            elif tag == "SWAP":
+                c_base = QColor(COLORS["danger"])
+            elif tag == "PIVOT":
+                c_base = QColor("#8B5CF6")
+            elif tag in ("CMP", "SCAN"):
+                c_base = QColor(COLORS["accent_blue"])
+            elif tag in ("MIN", "KEY", "PART"):
+                c_base = QColor(COLORS["accent_gold"])
+            else:
+                c_base = QColor(COLORS["accent_teal"])
+
+            bar_rect = QRectF(bx, by, bar_w, bar_h)
+            bar_grad = QLinearGradient(bx, by, bx, by + bar_h)
+            bar_grad.setColorAt(0.0, c_base.lighter(115))
+            bar_grad.setColorAt(1.0, c_base)
+
+            painter.setBrush(QBrush(bar_grad))
+            painter.setPen(QPen(c_base.darker(120), 1.0))
+            painter.drawRoundedRect(bar_rect, 4.0, 4.0)
+
+            # Value on top
+            font_size = max(9, min(12, int(bar_w * 0.38)))
+            painter.setFont(get_mono_font(font_size, weight=700))
+            painter.setPen(QPen(QColor(COLORS["text_primary"])))
+            painter.drawText(QRectF(bx - 6, by - 18, bar_w + 12, 16), Qt.AlignCenter, str(val))
+
+            # Index below
+            painter.setFont(get_mono_font(10, weight=400))
+            painter.setPen(QPen(QColor(COLORS["text_muted"])))
+            painter.drawText(QRectF(bx - 6, base_y + 4, bar_w + 12, 14), Qt.AlignCenter, str(i))
+
+            # Tag label if active
+            if tag and not is_done:
+                painter.setFont(get_ui_font(9, weight=700))
+                painter.setPen(QPen(c_base))
+                painter.drawText(QRectF(bx - 10, base_y + 18, bar_w + 20, 12), Qt.AlignCenter, tag)
+
+        painter.restore()
+
+    def _draw_comparison_search(self, painter: QPainter, rect: QRectF, sd: dict, is_done: bool):
+        arr = sd.get("array", [])
+        n = len(arr)
+        if n == 0:
+            return
+
+        target = sd.get("target", 0)
+        found_idx = sd.get("found_index", None)
+        eliminated = set(sd.get("eliminated_indices", []))
+        curr_idx = sd.get("current_index", None)
+        low = sd.get("low", None)
+        mid = sd.get("mid", None)
+        high = sd.get("high", None)
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        tile_spacing = max(3.0, min(8.0, rect.width() / (n * 6.0)))
+        tile_w = (rect.width() - (n - 1) * tile_spacing) / max(1, n)
+        tile_h = min(tile_w * 1.1, 46.0)
+        ty = rect.center().y() - tile_h / 2.0
+
+        for i in range(n):
+            val = arr[i]
+            tx = rect.left() + i * (tile_w + tile_spacing)
+            tile_rect = QRectF(tx, ty, tile_w, tile_h)
+
+            if found_idx == i:
+                bg_c = QColor("#D1FAE5")
+                fg_c = QColor("#065F46")
+                border_c = QColor("#10B981")
+            elif i in eliminated:
+                bg_c = QColor("#F1F5F9")
+                fg_c = QColor("#94A3B8")
+                border_c = QColor("#E2E8F0")
+            elif curr_idx == i or mid == i:
+                bg_c = QColor("#EFF6FF")
+                fg_c = QColor("#1D4ED8")
+                border_c = QColor("#3B82F6")
+            elif low == i or high == i:
+                bg_c = QColor("#FDF4FF")
+                fg_c = QColor("#7E22CE")
+                border_c = QColor("#A855F7")
+            else:
+                bg_c = QColor("#FFFFFF")
+                fg_c = QColor("#0F172A")
+                border_c = QColor("#CBD5E1")
+
+            painter.setBrush(QBrush(bg_c))
+            painter.setPen(QPen(border_c, 1.5 if (found_idx == i or mid == i) else 1.0))
+            painter.drawRoundedRect(tile_rect, 6.0, 6.0)
+
+            # Val
+            painter.setFont(get_mono_font(max(10, int(tile_w * 0.34)), weight=700))
+            painter.setPen(QPen(fg_c))
+            painter.drawText(tile_rect, Qt.AlignCenter, str(val))
+
+            # Index below
+            painter.setFont(get_mono_font(10, weight=400))
+            painter.setPen(QPen(QColor(COLORS["text_muted"])))
+            painter.drawText(QRectF(tx - 6, ty + tile_h + 4, tile_w + 12, 14), Qt.AlignCenter, f"[{i}]")
+
+            # Pointer tag
+            pt_label = ""
+            pt_color = "#3B82F6"
+            if found_idx == i:
+                pt_label = "FOUND"
+                pt_color = "#10B981"
+            elif mid == i:
+                pt_label = "MID"
+                pt_color = "#3B82F6"
+            elif curr_idx == i:
+                pt_label = "SCAN"
+                pt_color = "#3B82F6"
+            elif low == i:
+                pt_label = "LOW"
+                pt_color = "#A855F7"
+            elif high == i:
+                pt_label = "HIGH"
+                pt_color = "#A855F7"
+
+            if pt_label:
+                painter.setFont(get_ui_font(9, weight=700))
+                painter.setPen(QPen(QColor(pt_color)))
+                painter.drawText(QRectF(tx - 10, ty + tile_h + 18, tile_w + 20, 14), Qt.AlignCenter, pt_label)
 
         painter.restore()
 

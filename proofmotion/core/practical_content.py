@@ -2691,6 +2691,8 @@ def get_practical_content(topic_key: str) -> TopicPracticalData:
         "curve_hermite": "curve_bezier",
         "proj_pyramid": "proj_cube_persp",
         "compare_mst": "prim_mst",
+        "compare_sorting": "bubble_sort",
+        "compare_searching": "linear_search",
     }
     target_key = alias_map.get(topic_key)
     if target_key and target_key in PRACTICAL_KNOWLEDGE_BASE:

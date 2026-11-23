@@ -264,6 +264,19 @@ TOPIC_PRESETS = {
         ("Reverse Sorted", {"array_input": "70, 60, 50, 40, 30, 20, 10"}),
         ("Nearly Sorted", {"array_input": "10, 20, 35, 30, 45, 50, 60"}),
     ],
+    "compare_sorting": [
+        ("Quick vs Bubble", {"algo_1": "Bubble Sort", "algo_2": "Quick Sort", "array_input": "34, 12, 89, 5, 23, 77, 45, 18, 62, 9"}),
+        ("Merge vs Quick", {"algo_1": "Merge Sort", "algo_2": "Quick Sort", "array_input": "45, 12, 85, 32, 89, 39, 69, 44, 42, 1, 68, 53"}),
+        ("Insertion vs Bubble", {"algo_1": "Bubble Sort", "algo_2": "Insertion Sort", "array_input": "28, 14, 9, 42, 18, 35, 6, 21"}),
+        ("Reversed Array", {"algo_1": "Bubble Sort", "algo_2": "Quick Sort", "array_input": "60, 50, 40, 30, 20, 10"}),
+        ("Nearly Sorted", {"algo_1": "Insertion Sort", "algo_2": "Selection Sort", "array_input": "5, 10, 15, 25, 20, 30, 35, 40"}),
+    ],
+    "compare_searching": [
+        ("Middle Target (23)", {"array_input": "4, 8, 15, 16, 23, 30, 42, 55, 68", "target": 23}),
+        ("End Target (68)", {"array_input": "4, 8, 15, 16, 23, 30, 42, 55, 68", "target": 68}),
+        ("First Item (4)", {"array_input": "4, 8, 15, 16, 23, 30, 42, 55, 68", "target": 4}),
+        ("Not in Array (99)", {"array_input": "4, 8, 15, 16, 23, 30, 42, 55, 68", "target": 99}),
+    ],
     "proj_cube_persp": [
         ("Default Perspective", {"rx": 25.0, "ry": 35.0, "rz": 0.0, "tx": 0.0, "ty": 0.0, "tz": 0.0, "sx": 1.0, "sy": 1.0, "sz": 1.0, "camera_dist": 7.0, "focal_dist": 4.5}),
         ("Top-Down View", {"rx": 65.0, "ry": 20.0, "rz": 0.0, "tx": 0.0, "ty": 0.0, "tz": 0.0, "sx": 1.0, "sy": 1.0, "sz": 1.0, "camera_dist": 8.0, "focal_dist": 4.5}),
@@ -300,6 +313,7 @@ class ParameterPanel(QWidget):
     testUnderstandingRequested = pyqtSignal(str)
     exportPdfRequested = pyqtSignal()
     tabChanged = pyqtSignal(int)
+    compareRequested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -804,6 +818,53 @@ class ParameterPanel(QWidget):
         if topic_key in ("bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"):
             theme_section = self._build_sorting_styles_section()
             self._params_layout.addWidget(theme_section)
+            comp_btn = QPushButton("⚔  Compare with Another Algorithm →")
+            comp_btn.setObjectName("CompareQuickBtn")
+            comp_btn.setCursor(Qt.PointingHandCursor)
+            comp_btn.setStyleSheet("""
+                QPushButton#CompareQuickBtn {
+                    background-color: #F5F3FF;
+                    color: #6C5CE7;
+                    border: 1px solid #DDD6FE;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    text-align: center;
+                }
+                QPushButton#CompareQuickBtn:hover {
+                    background-color: #EDE9FE;
+                    border-color: #8B5CF6;
+                    color: #5B21B6;
+                }
+            """)
+            comp_btn.clicked.connect(lambda: self.compareRequested.emit("compare_sorting"))
+            self._params_layout.addWidget(comp_btn)
+        elif topic_key in ("linear_search", "binary_search"):
+            comp_btn = QPushButton("⚔  Compare Linear vs Binary Search →")
+            comp_btn.setObjectName("CompareQuickBtn")
+            comp_btn.setCursor(Qt.PointingHandCursor)
+            comp_btn.setStyleSheet("""
+                QPushButton#CompareQuickBtn {
+                    background-color: #EFF6FF;
+                    color: #2563EB;
+                    border: 1px solid #BFDBFE;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    text-align: center;
+                }
+                QPushButton#CompareQuickBtn:hover {
+                    background-color: #DBEAFE;
+                    border-color: #3B82F6;
+                    color: #1D4ED8;
+                }
+            """)
+            comp_btn.clicked.connect(lambda: self.compareRequested.emit("compare_searching"))
+            self._params_layout.addWidget(comp_btn)
 
         # 4. Clipping lesson controls
         if topic_key in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):

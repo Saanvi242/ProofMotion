@@ -431,7 +431,7 @@ class TestGUIIntegration(unittest.TestCase):
     def test_searching_in_catalog_and_execution(self):
         self.controller.on_module_selected("searching")
         keys = [t.key for t in self.controller._catalog["searching"]["items"]]
-        self.assertEqual(keys, ["linear_search", "binary_search"])
+        self.assertEqual(keys, ["linear_search", "binary_search", "compare_searching"])
         for topic in keys:
             self.controller.on_topic_selected(topic)
             self.assertGreater(len(self.controller.current_steps), 0)

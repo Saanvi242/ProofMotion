@@ -81,6 +81,7 @@ class RenderData:
     clipping_data: Optional[Dict[str, Any]] = None      # for Cohen-Sutherland
     curve_data: Optional[Dict[str, Any]] = None         # for Bézier / B-spline / Hermite
     matrix_info: Optional[Dict[str, Any]] = None        # for transformations
+    comparison_data: Optional[Dict[str, Any]] = None    # for side-by-side algorithm comparison
     
     # View framing hint (xmin, ymin, xmax, ymax) in world coordinates
     view_bounds: Optional[Tuple[float, float, float, float]] = None

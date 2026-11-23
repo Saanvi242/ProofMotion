@@ -13,6 +13,8 @@ from algorithms.sorting.merge_sort import merge_sort_trace
 from algorithms.sorting.quick_sort import quick_sort_trace
 from algorithms.searching.linear_search import linear_search_trace
 from algorithms.searching.binary_search import binary_search_trace
+from algorithms.sorting.compare_sorting import compare_sorting_trace
+from algorithms.searching.compare_searching import compare_searching_trace
 
 
 ALGORITHMS = {
@@ -46,6 +48,12 @@ ALGORITHMS = {
         "description": "Selects a pivot, partitions elements into smaller and larger, and recurses.",
         "time_best": "O(n log n)", "time_avg": "O(n log n)", "time_worst": "O(n²)", "space": "O(log n)",
     },
+    "compare_sorting": {
+        "name": "Compare Sorting Algorithms",
+        "category": "sorting",
+        "description": "Runs any two sorting algorithms side-by-side on the same array to evaluate relative speeds and operations.",
+        "time_best": "Varies", "time_avg": "Varies", "time_worst": "Varies", "space": "Varies",
+    },
     "linear_search": {
         "name": "Linear Search",
         "category": "searching",
@@ -58,10 +66,18 @@ ALGORITHMS = {
         "description": "Efficiently searches a sorted array by repeatedly halving the search interval.",
         "time_best": "O(1)", "time_avg": "O(log n)", "time_worst": "O(log n)", "space": "O(1)",
     },
+    "compare_searching": {
+        "name": "Compare Searching Algorithms",
+        "category": "searching",
+        "description": "Runs Linear Search and Binary Search side-by-side to observe logarithmic search space halving.",
+        "time_best": "Varies", "time_avg": "Varies", "time_worst": "Varies", "space": "O(1)",
+    },
 }
 
 
 class AlgorithmEngine:
+    ALGORITHMS = ALGORITHMS
+
     @staticmethod
     def get_algorithm_list():
         return [(k, v["name"], v["category"]) for k, v in ALGORITHMS.items()]
@@ -92,3 +108,11 @@ class AlgorithmEngine:
             steps, _ = binary_search_trace(arr, target)
             return steps
         raise ValueError(f"Unknown searching algorithm: {algo_key}")
+
+    @staticmethod
+    def run_sorting_comparison(algo_1: str, algo_2: str, arr: List[int]) -> List[VisualizationStep]:
+        return compare_sorting_trace(algo_1, algo_2, arr)
+
+    @staticmethod
+    def run_searching_comparison(arr: List[int], target: int) -> List[VisualizationStep]:
+        return compare_searching_trace(arr, target)

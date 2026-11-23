@@ -23,6 +23,8 @@ from core.step_model import VisualizationStep
 from core.pdf_exporter import PDFExporter
 from theorems.theorem_engine import TheoremEngine
 from algorithms.algorithm_engine import AlgorithmEngine
+from algorithms.sorting.compare_sorting import compare_sorting_trace
+from algorithms.searching.compare_searching import compare_searching_trace
 from algorithms.graph_algorithms.prim import prim_trace
 from algorithms.graph_algorithms.kruskal import kruskal_trace
 from algorithms.graph_algorithms.compare_mst import compare_mst_trace
@@ -124,6 +126,18 @@ class ApplicationController(QObject):
                             ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="10, 80, 30, 90, 40, 50, 70, 20"),
                         ]
                     ),
+                    Theorem(
+                        key="compare_sorting",
+                        display_name="Compare Sorting Algorithms",
+                        short_description="Run any two sorting algorithms side-by-side on the same array to observe comparative execution speeds.",
+                        parameters=[
+                            ParameterSpec("algo_1", "Algorithm 1 (Left)", ParameterType.CHOICE, default="Bubble Sort",
+                                          choices=["Bubble Sort", "Selection Sort", "Insertion Sort", "Merge Sort", "Quick Sort"]),
+                            ParameterSpec("algo_2", "Algorithm 2 (Right)", ParameterType.CHOICE, default="Quick Sort",
+                                          choices=["Bubble Sort", "Selection Sort", "Insertion Sort", "Merge Sort", "Quick Sort"]),
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="34, 12, 89, 5, 23, 77, 45, 18, 62, 9"),
+                        ]
+                    ),
                 ]
             },
             "searching": {
@@ -142,6 +156,15 @@ class ApplicationController(QObject):
                         key="binary_search",
                         display_name="Binary Search",
                         short_description="Halves search space on sorted collection.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="4, 8, 15, 16, 23, 30, 42, 55, 68"),
+                            ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=23, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="compare_searching",
+                        display_name="Compare Searching Algorithms",
+                        short_description="Run Linear Search and Binary Search side-by-side on the same array to observe logarithmic search space halving.",
                         parameters=[
                             ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="4, 8, 15, 16, 23, 30, 42, 55, 68"),
                             ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=23, min_value=-9999, max_value=9999),
@@ -289,6 +312,18 @@ class ApplicationController(QObject):
                         ]
                     ),
                     Theorem(
+                        key="compare_sorting",
+                        display_name="Compare Sorting Algorithms",
+                        short_description="Run any two sorting algorithms side-by-side on the same array to observe comparative execution speeds.",
+                        parameters=[
+                            ParameterSpec("algo_1", "Algorithm 1 (Left)", ParameterType.CHOICE, default="Bubble Sort",
+                                          choices=["Bubble Sort", "Selection Sort", "Insertion Sort", "Merge Sort", "Quick Sort"]),
+                            ParameterSpec("algo_2", "Algorithm 2 (Right)", ParameterType.CHOICE, default="Quick Sort",
+                                          choices=["Bubble Sort", "Selection Sort", "Insertion Sort", "Merge Sort", "Quick Sort"]),
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="34, 12, 89, 5, 23, 77, 45, 18, 62, 9"),
+                        ]
+                    ),
+                    Theorem(
                         key="linear_search",
                         display_name="Linear Search",
                         short_description="Sequentially scans array until target is found.",
@@ -301,6 +336,15 @@ class ApplicationController(QObject):
                         key="binary_search",
                         display_name="Binary Search",
                         short_description="Halves search space on sorted collection.",
+                        parameters=[
+                            ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="4, 8, 15, 16, 23, 30, 42, 55, 68"),
+                            ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=23, min_value=-9999, max_value=9999),
+                        ]
+                    ),
+                    Theorem(
+                        key="compare_searching",
+                        display_name="Compare Searching Algorithms",
+                        short_description="Run Linear Search and Binary Search side-by-side on the same array to observe logarithmic search space halving.",
                         parameters=[
                             ParameterSpec("array_input", "Array (comma-separated)", ParameterType.TEXT, default="4, 8, 15, 16, 23, 30, 42, 55, 68"),
                             ParameterSpec("target", "Target Value", ParameterType.INTEGER, default=23, min_value=-9999, max_value=9999),
@@ -539,6 +583,8 @@ class ApplicationController(QObject):
             w.homeRequested.connect(self.on_home_requested)
         w.theorem_panel.theoremSelected.connect(self.on_topic_selected)
         w.parameter_panel.parametersApplied.connect(self.on_parameters_applied)
+        if hasattr(w.parameter_panel, "compareRequested"):
+            w.parameter_panel.compareRequested.connect(self.on_topic_selected)
 
         w.animation_controls.previousClicked.connect(self.on_previous_step)
         w.animation_controls.playPauseClicked.connect(self.on_play_pause)
@@ -634,14 +680,26 @@ class ApplicationController(QObject):
 
     def on_topic_selected(self, topic_key: str):
         self._stop_playback()
-        self.current_topic_key = topic_key
         self._lesson_completed_banner_shown = False
         if hasattr(self.window, "hide_completion_banner"):
             self.window.hide_completion_banner()
+
+        # If topic belongs to another module, switch module first
+        curr_items = self._catalog.get(self.current_module, {}).get("items", [])
+        if not any(it.key == topic_key for it in curr_items):
+            for mod_k, mod_d in self._catalog.items():
+                if any(it.key == topic_key for it in mod_d.get("items", [])):
+                    self.on_module_selected(mod_k)
+                    break
+
+        self.current_topic_key = topic_key
         mod_info = self._catalog[self.current_module]
         item = next((it for it in mod_info["items"] if it.key == topic_key), None)
         if not item:
             return
+
+        if hasattr(self.window, "theorem_panel"):
+            self.window.theorem_panel._apply_selected_style(topic_key)
 
         if self.current_module == "projections_3d":
             if hasattr(self.window, "opengl_widget"):
@@ -763,7 +821,14 @@ class ApplicationController(QObject):
             if not arr:
                 raise ValueError("Array cannot be empty.")
 
-            if key in ("bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"):
+            if key == "compare_sorting":
+                algo_1 = values.get("algo_1", "Bubble Sort")
+                algo_2 = values.get("algo_2", "Quick Sort")
+                return AlgorithmEngine.run_sorting_comparison(algo_1, algo_2, arr)
+            elif key == "compare_searching":
+                target = int(values.get("target", 23))
+                return AlgorithmEngine.run_searching_comparison(arr, target)
+            elif key in ("bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"):
                 return AlgorithmEngine.run_sorting(key, arr)
             elif key in ("linear_search", "binary_search"):
                 target = int(values.get("target", 23))
@@ -1050,6 +1115,17 @@ class ApplicationController(QObject):
                 self.window.equation_panel.display_result(
                     f"Midpoint C(0.5) = ({pt[0]:.2f}, {pt[1]:.2f})"
                 )
+        elif idx == total - 1 and self.current_topic_key == "compare_sorting":
+            verdict = rd.comparison_data.get("summary", {}) if (rd and getattr(rd, "comparison_data", None)) else {}
+            winner = verdict.get("winner", "Leading Algorithm")
+            ratio = verdict.get("ratio", "1.0×")
+            self.window.equation_panel.display_result(
+                f"Comparison Complete: {winner} finished with {ratio} fewer operations!"
+            )
+        elif idx == total - 1 and self.current_topic_key == "compare_searching":
+            self.window.equation_panel.display_result(
+                "Search Comparison Complete: Binary Search demonstrated logarithmic efficiency!"
+            )
         elif idx == total - 1 and self.current_module == "graphs":
             mst_weight = metrics.get("Total Weight") or vals.get("final_weight") or ""
             edges_count = metrics.get("MST Edges") or vals.get("mst_edges_count") or ""
