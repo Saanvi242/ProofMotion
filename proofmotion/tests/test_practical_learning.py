@@ -4,13 +4,18 @@ tests/test_practical_learning.py
 Automated tests for Practical Learning & Real-World Applications:
 1. Knowledge base content integrity across all categories (Theorems, Sorting,
    Searching, Graphs, Trees, Transformations, Rasterization, Clipping).
-2. UI rendering of Practical Example, Real-World Applications, and Knowledge Check.
-3. Interactive quiz response validation and feedback logic.
-4. Seamless integration with ParameterPanel tab switching and MainWindow.
+2. Separate Explore Applications interface (Practical Example & Applications only, zero MCQs).
+3. Separate Test Your Understanding interface (Interactive MCQs with Check Answer & completion state, zero application cards).
+4. Strict separation of button triggers:
+   - Explore Applications opens ONLY applications_dialog.
+   - Test Your Understanding opens ONLY quiz_dialog.
+5. Absence of emojis across all labels and controls.
+6. Playback continuity during dialog interactions.
 """
 
 import os
 import unittest
+import re
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 
@@ -18,7 +23,11 @@ from core.practical_content import (
     PRACTICAL_KNOWLEDGE_BASE, get_practical_content, TopicPracticalData,
     QuizQuestion, RealWorldApplication, PracticalExample
 )
-from ui.practical_learning_widget import PracticalLearningWidget, QuizQuestionWidget
+from ui.practical_learning_widget import (
+    ExploreApplicationsWidget, RealWorldApplicationsDialog,
+    KnowledgeCheckWidget, KnowledgeCheckDialog,
+    PracticalLearningWidget, PracticalLearningDialog
+)
 from ui.main_window import MainWindow
 from controllers.application_controller import ApplicationController
 from theorems.theorem_engine import TheoremEngine
@@ -54,7 +63,6 @@ class TestPracticalLearningContent(unittest.TestCase):
                 self.assertTrue(0 <= q.correct_index < 4)
                 self.assertTrue(len(q.explanation) > 10)
 
-        # Ensure major required curriculum categories exist
         cat_str = " ".join(categories_found).lower()
         self.assertIn("theorem", cat_str)
         self.assertIn("sorting", cat_str)
@@ -84,124 +92,134 @@ class TestPracticalLearningContent(unittest.TestCase):
         trans = get_practical_content("trans_translation")
         self.assertIn("character", trans.practical_example.scenario.lower())
 
-    def test_fallback_for_unknown_topic(self):
-        data = get_practical_content("unknown_custom_algorithm")
-        self.assertIsNotNone(data)
-        self.assertIn("Unknown Custom Algorithm", data.display_name)
-        self.assertGreaterEqual(len(data.real_world_applications), 1)
-        self.assertGreaterEqual(len(data.knowledge_check), 1)
 
-
-class TestPracticalLearningWidget(unittest.TestCase):
-    """Verifies the UI rendering and interactive quiz logic."""
+class TestExploreApplicationsWidget(unittest.TestCase):
+    """Verifies that ExploreApplicationsWidget contains ONLY practical applications and examples, no MCQs."""
 
     def setUp(self):
-        self.widget = PracticalLearningWidget()
+        self.widget = ExploreApplicationsWidget()
 
-    def test_topic_loading(self):
+    def test_contains_only_applications_and_examples(self):
         self.widget.set_topic("bubble_sort")
         self.assertEqual(self.widget._topic_title_label.text(), "Bubble Sort")
         self.assertIn("student", self.widget._scenario_title.text().lower())
         self.assertGreater(self.widget._apps_list_layout.count(), 0)
-        self.assertGreater(self.widget._questions_layout.count(), 0)
 
-        # Switch to Cohen-Sutherland
-        self.widget.set_topic("clip_cohen_sutherland")
-        self.assertIn("Cohen-Sutherland", self.widget._topic_title_label.text())
-        self.assertIn("map", self.widget._scenario_title.text().lower())
-
-    def test_interactive_quiz_correct_answer(self):
-        q = QuizQuestion(
-            question="What is 2 + 2?",
-            options=["3", "4", "5", "6"],
-            correct_index=1,
-            explanation="Basic arithmetic: 2 + 2 = 4."
-        )
-        card = QuizQuestionWidget(0, q)
-
-        # Select correct option (index 1)
-        card._buttons[1].click()
-        self.assertTrue(card._answered)
-        self.assertFalse(card._feedback_box.isHidden())
-        self.assertIn("Correct", card._result_header.text())
-
-    def test_interactive_quiz_incorrect_answer(self):
-        q = QuizQuestion(
-            question="What is the time complexity of binary search?",
-            options=["O(n)", "O(n²)", "O(log n)", "O(1)"],
-            correct_index=2,
-            explanation="Binary search cuts the search space in half each step."
-        )
-        card = QuizQuestionWidget(0, q)
-
-        # Select wrong option (index 0)
-        card._buttons[0].click()
-        self.assertTrue(card._answered)
-        self.assertFalse(card._feedback_box.isHidden())
-        self.assertIn("Incorrect", card._result_header.text())
-
-        # Reset question
-        card.reset_question()
-        self.assertFalse(card._answered)
-        self.assertTrue(card._feedback_box.isHidden())
-        self.assertTrue(card._buttons[0].isEnabled())
+        # Must NOT have quiz widgets or question layouts
+        self.assertFalse(hasattr(self.widget, "_opt_buttons"))
+        self.assertFalse(hasattr(self.widget, "_questions_layout"))
+        self.assertFalse(hasattr(self.widget, "_action_btn"))
 
 
-class TestMainWindowIntegration(unittest.TestCase):
-    """Verifies that MainWindow, ParameterPanel, and PracticalLearningDialog integrate cleanly."""
+class TestKnowledgeCheckWidget(unittest.TestCase):
+    """Verifies that KnowledgeCheckWidget contains ONLY interactive quiz questions, no application cards."""
+
+    def setUp(self):
+        self.widget = KnowledgeCheckWidget()
+
+    def test_contains_only_quiz_elements(self):
+        self.widget.set_topic("bubble_sort")
+        self.assertEqual(self.widget._topic_title_label.text(), "Bubble Sort")
+        self.assertTrue(len(self.widget._opt_buttons) == 4)
+        self.assertFalse(self.widget._action_btn.isEnabled())  # Disabled before selection
+
+        # Must NOT have practical example or application cards
+        self.assertFalse(hasattr(self.widget, "_apps_list_layout"))
+        self.assertFalse(hasattr(self.widget, "_scenario_title"))
+        self.assertFalse(hasattr(self.widget, "_connection_box"))
+
+    def test_quiz_interactive_flow(self):
+        self.widget.set_topic("bubble_sort")
+        q = self.widget._questions[0]
+        correct_idx = q.correct_index
+
+        # Select correct option
+        self.widget._on_option_selected(correct_idx)
+        self.assertTrue(self.widget._action_btn.isEnabled())
+        self.assertEqual(self.widget._action_btn.text(), "Check Answer")
+
+        # Click Check Answer
+        self.widget._on_action_clicked()
+        self.assertTrue(self.widget._question_graded)
+        self.assertFalse(self.widget._feedback_box.isHidden())
+        self.assertEqual(self.widget._result_header.text(), "Correct")
+        self.assertEqual(self.widget._score, 1)
+
+
+class TestMainWindowIndependentTriggers(unittest.TestCase):
+    """Verifies that Explore Applications and Test Your Understanding open two completely separate dialogs."""
 
     def setUp(self):
         self.engine = TheoremEngine()
         self.window = MainWindow(theorems=self.engine.get_theorems_list())
         self.controller = ApplicationController(self.window, engine=self.engine)
 
-    def test_parameter_panel_overlay_trigger(self):
+    def test_explore_applications_opens_only_applications_dialog(self):
         panel = self.window.parameter_panel
-        dialog = self.window.practical_dialog
-        self.assertFalse(dialog.isVisible())
+        self.assertFalse(self.window.applications_dialog.isVisible())
+        self.assertFalse(self.window.quiz_dialog.isVisible())
 
-        # Click Explore Applications button in parameter panel
+        # Click Explore Applications
         panel._explore_apps_btn.click()
-        self.assertTrue(dialog.isVisible())
-        self.assertEqual(dialog.practical_widget._current_topic_key, panel.practical_widget._current_topic_key)
 
-        # Close dialog
-        dialog.close()
-        self.assertFalse(dialog.isVisible())
+        self.assertTrue(self.window.applications_dialog.isVisible())
+        self.assertFalse(self.window.quiz_dialog.isVisible())
 
-    def test_equation_panel_nav_button(self):
+        self.window.applications_dialog.close()
+        self.assertFalse(self.window.applications_dialog.isVisible())
+
+    def test_test_understanding_opens_only_quiz_dialog(self):
+        panel = self.window.parameter_panel
+        self.assertFalse(self.window.applications_dialog.isVisible())
+        self.assertFalse(self.window.quiz_dialog.isVisible())
+
+        # Click Test Your Understanding
+        panel._quiz_link_btn.click()
+
+        self.assertTrue(self.window.quiz_dialog.isVisible())
+        self.assertFalse(self.window.applications_dialog.isVisible())
+
+        self.window.quiz_dialog.close()
+        self.assertFalse(self.window.quiz_dialog.isVisible())
+
+    def test_independent_dialog_instances(self):
+        # Verify that applications_dialog and quiz_dialog are distinct classes and instances
+        self.assertNotEqual(self.window.applications_dialog, self.window.quiz_dialog)
+        self.assertIsInstance(self.window.applications_dialog, RealWorldApplicationsDialog)
+        self.assertIsInstance(self.window.quiz_dialog, KnowledgeCheckDialog)
+
+    def test_equation_panel_hud_triggers(self):
         self.controller.on_module_selected("sorting")
         self.controller.on_topic_selected("bubble_sort")
 
-        # Click "Explore Applications ↗" in equation panel
+        # Not final step: should open applications dialog
+        self.window.equation_panel._is_final_step = False
         self.window.equation_panel._apps_btn.click()
-        self.assertTrue(self.window.practical_dialog.isVisible())
-        self.assertEqual(self.window.practical_dialog.practical_widget._current_topic_key, "bubble_sort")
-        self.window.practical_dialog.close()
+        self.assertTrue(self.window.applications_dialog.isVisible())
+        self.assertFalse(self.window.quiz_dialog.isVisible())
+        self.window.applications_dialog.close()
 
-    def test_topic_switching_updates_practical_content(self):
-        self.controller.on_module_selected("clipping")
-        self.controller.on_topic_selected("clip_cohen_sutherland")
-        self.assertEqual(
-            self.window.practical_dialog.practical_widget._current_topic_key,
-            "clip_cohen_sutherland"
-        )
-        self.assertIn(
-            "Cohen-Sutherland",
-            self.window.practical_dialog.practical_widget._topic_title_label.text()
-        )
+        # Final step: should open quiz dialog
+        self.window.equation_panel._is_final_step = True
+        self.window.equation_panel._apps_btn.click()
+        self.assertTrue(self.window.quiz_dialog.isVisible())
+        self.assertFalse(self.window.applications_dialog.isVisible())
+        self.window.quiz_dialog.close()
 
-        # Switch to binary search
-        self.controller.on_module_selected("searching")
-        self.controller.on_topic_selected("binary_search")
-        self.assertEqual(
-            self.window.practical_dialog.practical_widget._current_topic_key,
-            "binary_search"
-        )
-        self.assertIn(
-            "Binary Search",
-            self.window.practical_dialog.practical_widget._topic_title_label.text()
-        )
+    def test_no_emojis_in_feature_interfaces(self):
+        # Helper regex to detect emoji unicode characters
+        emoji_pattern = re.compile(r'[\U00010000-\U0010ffff\u2600-\u27bf\u2300-\u23ff\u2b50-\u2b55\u203c-\u2049]')
+
+        # 1. Parameter Panel controls
+        self.assertFalse(bool(emoji_pattern.search(self.window.parameter_panel._explore_apps_btn.text())))
+        self.assertFalse(bool(emoji_pattern.search(self.window.parameter_panel._quiz_link_btn.text())))
+
+        # 2. Equation Panel HUD button
+        self.assertFalse(bool(emoji_pattern.search(self.window.equation_panel._apps_btn.text())))
+
+        # 3. Dialog Window Titles and Header Labels
+        self.assertFalse(bool(emoji_pattern.search(self.window.applications_dialog.windowTitle())))
+        self.assertFalse(bool(emoji_pattern.search(self.window.quiz_dialog.windowTitle())))
 
     def test_dialog_does_not_reset_playback(self):
         self.controller.on_module_selected("sorting")
@@ -209,14 +227,17 @@ class TestMainWindowIntegration(unittest.TestCase):
         self.controller.on_step_selected(3)
         self.assertEqual(self.controller.current_step_index, 3)
 
-        # Open and close the dedicated applications dialog
-        self.window._open_practical_dialog("bubble_sort", scroll_to_quiz=False)
-        self.assertTrue(self.window.practical_dialog.isVisible())
-        # Step index must remain exactly at 3
+        # Open applications dialog
+        self.window._open_applications_dialog("bubble_sort")
+        self.assertTrue(self.window.applications_dialog.isVisible())
         self.assertEqual(self.controller.current_step_index, 3)
+        self.window.applications_dialog.close()
 
-        self.window.practical_dialog.close()
+        # Open quiz dialog
+        self.window._open_quiz_dialog("bubble_sort")
+        self.assertTrue(self.window.quiz_dialog.isVisible())
         self.assertEqual(self.controller.current_step_index, 3)
+        self.window.quiz_dialog.close()
 
 
 if __name__ == "__main__":

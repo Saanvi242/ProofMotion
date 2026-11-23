@@ -296,7 +296,8 @@ class ParameterPanel(QWidget):
     sortingStyleRequested = pyqtSignal(str) # "balls", "cubes", "marbles", "bars"
     curveTChanged = pyqtSignal(float)
 
-    exploreApplicationsRequested = pyqtSignal(str, bool)
+    exploreApplicationsRequested = pyqtSignal(str)
+    testUnderstandingRequested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -399,7 +400,7 @@ class ParameterPanel(QWidget):
 
         b_top = QHBoxLayout()
         b_top.setSpacing(6)
-        b_badge = QLabel("REAL-WORLD APPLICATIONS 💡")
+        b_badge = QLabel("REAL-WORLD APPLICATIONS")
         b_badge.setStyleSheet("""
             background-color: #EDE9FE;
             color: #6C5CE7;
@@ -442,7 +443,7 @@ class ParameterPanel(QWidget):
         self._explore_apps_btn.clicked.connect(self._on_explore_apps_clicked)
         banner_layout.addWidget(self._explore_apps_btn)
 
-        self._quiz_link_btn = QPushButton("Test Your Understanding ↗")
+        self._quiz_link_btn = QPushButton("Test Your Understanding →")
         self._quiz_link_btn.setCursor(Qt.PointingHandCursor)
         self._quiz_link_btn.setStyleSheet("""
             QPushButton {
@@ -477,18 +478,23 @@ class ParameterPanel(QWidget):
 
     def _on_explore_apps_clicked(self):
         topic_key = getattr(self._active_theorem, "key", "")
-        self.exploreApplicationsRequested.emit(topic_key, False)
+        self.exploreApplicationsRequested.emit(topic_key)
 
     def _on_quiz_link_clicked(self):
         topic_key = getattr(self._active_theorem, "key", "")
-        self.exploreApplicationsRequested.emit(topic_key, True)
+        self.testUnderstandingRequested.emit(topic_key)
 
-    def show_applications(self, scroll_to_quiz: bool = False):
+    def show_applications(self):
         """Open the wide dedicated Real-World Applications view."""
         topic_key = getattr(self._active_theorem, "key", "")
         if hasattr(self, "practical_widget"):
             self.practical_widget.set_topic(topic_key)
-        self.exploreApplicationsRequested.emit(topic_key, scroll_to_quiz)
+        self.exploreApplicationsRequested.emit(topic_key)
+
+    def show_quiz(self):
+        """Open the dedicated Knowledge Check view."""
+        topic_key = getattr(self._active_theorem, "key", "")
+        self.testUnderstandingRequested.emit(topic_key)
 
     def show_parameters(self):
         """Parameters are always visible in the focused right sidebar."""

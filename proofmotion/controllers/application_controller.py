@@ -644,7 +644,11 @@ class ApplicationController(QObject):
                 self.window.opengl_widget.set_projection_mode("perspective")
 
         self.window.parameter_panel.set_theorem(item)
-        if hasattr(self.window, "practical_dialog"):
+        if hasattr(self.window, "applications_dialog"):
+            self.window.applications_dialog.set_topic(topic_key)
+        if hasattr(self.window, "quiz_dialog"):
+            self.window.quiz_dialog.set_topic(topic_key)
+        if hasattr(self.window, "practical_dialog") and self.window.practical_dialog is not getattr(self.window, "applications_dialog", None):
             self.window.practical_dialog.set_topic(topic_key)
         self.window.visualization_widget.set_theorem(topic_key, item.display_name)
         self.window.animation_controls.set_enabled_all(True)

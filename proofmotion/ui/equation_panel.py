@@ -60,6 +60,8 @@ def clean_math_text(text: str) -> str:
 
 
 class EquationPanel(QWidget):
+    exploreApplicationsRequested = pyqtSignal()
+    testUnderstandingRequested = pyqtSignal()
     applicationsRequested = pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -91,10 +93,10 @@ class EquationPanel(QWidget):
         self._metrics_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_row.addWidget(self._metrics_label)
 
-        self._apps_btn = QPushButton("💡 Explore Applications ↗")
+        self._apps_btn = QPushButton("Explore Applications →")
         self._apps_btn.setObjectName("AppsNavButton")
         self._apps_btn.setCursor(Qt.PointingHandCursor)
-        self._apps_btn.setToolTip("Explore practical examples, real-world engineering applications, and knowledge check")
+        self._apps_btn.setToolTip("Explore practical examples and real-world engineering applications")
         self._apps_btn.setStyleSheet("""
             QPushButton#AppsNavButton {
                 background-color: #F0EDFF;
@@ -112,7 +114,7 @@ class EquationPanel(QWidget):
                 border-color: #6C5CE7;
             }
         """)
-        self._apps_btn.clicked.connect(lambda: self.applicationsRequested.emit(self._is_final_step))
+        self._apps_btn.clicked.connect(self._on_apps_btn_clicked)
         header_row.addWidget(self._apps_btn)
         outer.addLayout(header_row)
 
@@ -190,7 +192,7 @@ class EquationPanel(QWidget):
         if hasattr(self, "_apps_btn"):
             self._is_final_step = (step_index_1based >= total_steps and total_steps > 1)
             if self._is_final_step:
-                self._apps_btn.setText("✓ Lesson Complete • Test Your Understanding ↗")
+                self._apps_btn.setText("Lesson Complete • Test Your Understanding →")
                 self._apps_btn.setStyleSheet("""
                     QPushButton#AppsNavButton {
                         background-color: #ECFDF5;
@@ -208,7 +210,7 @@ class EquationPanel(QWidget):
                     }
                 """)
             else:
-                self._apps_btn.setText("💡 Explore Applications ↗")
+                self._apps_btn.setText("Explore Applications →")
                 self._apps_btn.setStyleSheet("""
                     QPushButton#AppsNavButton {
                         background-color: #F0EDFF;
@@ -226,6 +228,14 @@ class EquationPanel(QWidget):
                         border-color: #6C5CE7;
                     }
                 """)
+
+    def _on_apps_btn_clicked(self):
+        if self._is_final_step:
+            self.testUnderstandingRequested.emit()
+            self.applicationsRequested.emit(True)
+        else:
+            self.exploreApplicationsRequested.emit()
+            self.applicationsRequested.emit(False)
 
     def _format_explanation_html(self, text: str) -> str:
         if not text:
@@ -286,7 +296,7 @@ class EquationPanel(QWidget):
 
     def display_result(self, result_text: str):
         clean_res = clean_math_text(result_text)
-        self._result_label.setText(f"✓ {clean_res}")
+        self._result_label.setText(clean_res)
         self._result_label.show()
 
     def clear(self):
