@@ -284,6 +284,7 @@ MODULE_TITLES = {key: title for key, title, _caption, _meta in LEARNING_TOPICS}
 class MainWindow(QMainWindow):
     moduleSelected = pyqtSignal(str)
     homeRequested = pyqtSignal()
+    exportPdfRequested = pyqtSignal()
 
     def __init__(self, theorems, parent=None):
         super().__init__(parent)
@@ -670,6 +671,11 @@ class MainWindow(QMainWindow):
         self.view_controls.fullscreenToggled.connect(self.toggle_canvas_fullscreen)
         self.view_controls.sortingStyleChanged.connect(self.visualization_widget.set_sorting_style)
         self.view_controls.reducedMotionToggled.connect(self.visualization_widget.set_sorting_reduced_motion)
+        self.view_controls.exportPdfClicked.connect(self.exportPdfRequested)
+
+        self._export_pdf_shortcut = QShortcut(QKeySequence("Ctrl+P"), self)
+        self._export_pdf_shortcut.activated.connect(self.exportPdfRequested.emit)
+
         layout.addWidget(self.canvas_stack, stretch=1)
 
         self.animation_controls = AnimationControls()

@@ -12,12 +12,15 @@ Coordinates:
   - Synchronized equations, pseudocode, metrics, and explanations
 """
 
+import os
 import random
 from typing import Dict, List, Any, Optional
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from models.theorem_state import Theorem, ParameterSpec, ParameterType, ProofStep
 from core.step_model import VisualizationStep
+from core.pdf_exporter import PDFExporter
 from theorems.theorem_engine import TheoremEngine
 from algorithms.algorithm_engine import AlgorithmEngine
 from algorithms.graph_algorithms.prim import prim_trace
@@ -54,6 +57,8 @@ class ApplicationController(QObject):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_step_from_timer)
+
+        self.pdf_exporter = PDFExporter()
 
         self._init_module_catalog()
         self._wire_signals()
@@ -555,6 +560,11 @@ class ApplicationController(QObject):
         if hasattr(w.parameter_panel, "curveTChanged"):
             w.parameter_panel.curveTChanged.connect(self.on_curve_t_changed)
 
+        if hasattr(w, "exportPdfRequested"):
+            w.exportPdfRequested.connect(self.on_export_pdf_requested)
+        if hasattr(w.view_controls, "exportPdfClicked"):
+            w.view_controls.exportPdfClicked.connect(self.on_export_pdf_requested)
+
     # ------------------------------------------------------------------
     # Module & Topic Selection
     # ------------------------------------------------------------------
@@ -1028,11 +1038,11 @@ class ApplicationController(QObject):
             edges_count = metrics.get("MST Edges") or vals.get("mst_edges_count") or ""
             if self.current_topic_key in ("prim_mst", "kruskal_mst"):
                 self.window.equation_panel.display_result(
-                    f"✔ Minimum Spanning Tree Complete: Total Weight = {mst_weight} across {edges_count} edges."
+                    f"Minimum Spanning Tree Complete: Total Weight = {mst_weight} across {edges_count} edges."
                 )
             elif self.current_topic_key == "compare_mst":
                 self.window.equation_panel.display_result(
-                    f"✔ MST Equivalence Verified: Both Prim and Kruskal produced identical weight = {mst_weight}."
+                    f"MST Equivalence Verified: Both Prim and Kruskal produced identical weight = {mst_weight}."
                 )
         elif idx == total - 1 and self.current_module == "trees":
             if self.current_topic_key.startswith("tree_"):
@@ -1041,10 +1051,10 @@ class ApplicationController(QObject):
                     seq = rd.tree_data.get("sequence", [])
                 if seq:
                     self.window.equation_panel.display_result(
-                        f"✔ Traversal Complete: Sequence = {' → '.join(str(x) for x in seq)}"
+                        f"Traversal Complete: Sequence = {' → '.join(str(x) for x in seq)}"
                     )
                 else:
-                    self.window.equation_panel.display_result("✔ Traversal Complete!")
+                    self.window.equation_panel.display_result("Traversal Complete!")
             elif self.current_topic_key == "bst_search":
                 found = vals.get("found", False)
                 tgt = vals.get("target", "")
@@ -1282,3 +1292,80 @@ class ApplicationController(QObject):
     def on_grid_toggled(self, checked: bool):
         if hasattr(self.window, "opengl_widget"):
             self.window.opengl_widget.set_show_grid(checked)
+
+    def on_export_pdf_requested(self, target_filepath: str = "") -> Optional[str]:
+        """
+        Exports the entire step-by-step sequence of the currently active lesson
+        as a clean, multi-page PDF reference document.
+        Does not interrupt playback or alter current step index.
+        """
+        if not self.current_steps:
+            if hasattr(self.window, "set_status"):
+                self.window.set_status("No active lesson steps to export.")
+            if not target_filepath:
+                QMessageBox.warning(
+                    self.window,
+                    "Export PDF",
+                    "No generated lesson steps to export. Please select a lesson topic first."
+                )
+            return None
+
+        topic_key = self.current_topic_key
+        display_name = topic_key.replace("_", " ").title()
+        if hasattr(self.window, "theorem_panel") and hasattr(self.window.theorem_panel, "_active_theorem") and self.window.theorem_panel._active_theorem:
+            display_name = getattr(self.window.theorem_panel._active_theorem, "display_name", display_name)
+
+        filepath = target_filepath
+        if not filepath:
+            clean_name = display_name.replace(" ", "_").replace("–", "-").replace("—", "-")
+            default_name = f"{clean_name}_Notes.pdf"
+            filepath, _ = QFileDialog.getSaveFileName(
+                self.window,
+                "Export Lesson as PDF",
+                default_name,
+                "PDF Documents (*.pdf)"
+            )
+
+        if not filepath:
+            return None
+
+        try:
+            if hasattr(self.window, "set_status"):
+                self.window.set_status("Exporting lesson to PDF study notes...")
+
+            # Extract any final result from controller computation
+            final_result = ""
+            if hasattr(self, "theorem_engine") and self.current_module == "theorems":
+                final_result = self.theorem_engine.compute_final_result(self.current_topic_key, self.current_parameters)
+
+            out_path = self.pdf_exporter.export_lesson(
+                topic_key=self.current_topic_key,
+                display_name=display_name,
+                category=self.current_module,
+                parameters=self.current_parameters,
+                steps=self.current_steps,
+                output_path=filepath,
+                final_result_text=final_result
+            )
+
+            filename = os.path.basename(filepath)
+            if hasattr(self.window, "set_status"):
+                self.window.set_status(f"Exported lesson notes to PDF: {filename}")
+
+            if not target_filepath:
+                QMessageBox.information(
+                    self.window,
+                    "PDF Export Successful",
+                    f"Successfully generated structured study notes for:\n\n{display_name}\n\nSaved to:\n{filepath}"
+                )
+            return out_path
+        except Exception as e:
+            if hasattr(self.window, "set_status"):
+                self.window.set_status("PDF export failed.")
+            if not target_filepath:
+                QMessageBox.critical(
+                    self.window,
+                    "Export Error",
+                    f"Could not generate PDF notes:\n\n{str(e)}"
+                )
+            return None

@@ -27,6 +27,7 @@ class ViewControls(QWidget):
     fullscreenToggled = pyqtSignal(bool)
     sortingStyleChanged = pyqtSignal(str)
     reducedMotionToggled = pyqtSignal(bool)
+    exportPdfClicked = pyqtSignal()
 
     PAN_STEP = 20.0
 
@@ -118,6 +119,36 @@ class ViewControls(QWidget):
 
         row.addStretch(1)
 
+        self._export_pdf_btn = QPushButton("Export PDF")
+        self._export_pdf_btn.setObjectName("ExportPdfButton")
+        self._export_pdf_btn.setToolTip("Export complete step-by-step lesson notes as PDF")
+        self._export_pdf_btn.setCursor(Qt.PointingHandCursor)
+        self._export_pdf_btn.setFixedHeight(28)
+        self._export_pdf_btn.setStyleSheet("""
+            QPushButton#ExportPdfButton {
+                background-color: #F5F3FF;
+                color: #6C5CE7;
+                border: 1px solid #D8D1FF;
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11.5px;
+                font-weight: 600;
+            }
+            QPushButton#ExportPdfButton:hover {
+                background-color: #6C5CE7;
+                color: #FFFFFF;
+                border-color: #6C5CE7;
+            }
+            QPushButton#ExportPdfButton:disabled {
+                background-color: #F1F5F9;
+                color: #94A3B8;
+                border-color: #E2E8F0;
+            }
+        """)
+        self._export_pdf_btn.clicked.connect(self.exportPdfClicked.emit)
+        row.addWidget(self._export_pdf_btn)
+
     def _on_style_changed(self, index: int):
         pass
 
@@ -150,6 +181,10 @@ class ViewControls(QWidget):
         self._fullscreen_btn.setChecked(is_fullscreen)
         self._fullscreen_btn.setText("🗗 Exit Fullscreen" if is_fullscreen else "⛶ Fullscreen")
         self._fullscreen_btn.blockSignals(False)
+
+    def set_export_pdf_enabled(self, enabled: bool):
+        if hasattr(self, "_export_pdf_btn"):
+            self._export_pdf_btn.setEnabled(enabled)
 
     def _make_btn(self, text: str) -> QPushButton:
         btn = QPushButton(text)
