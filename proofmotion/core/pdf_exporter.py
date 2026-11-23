@@ -32,9 +32,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.pdfgen import canvas
 
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QPixmap, QPainter
-from PyQt5.QtCore import Qt, QBuffer, QIODevice
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtGui import QPixmap, QPainter, QRegion, QColor
+from PyQt5.QtCore import Qt, QBuffer, QIODevice, QPoint
+from resources.theme import COLORS
 
 from core.step_model import VisualizationStep
 from graphics.visualization_widget import VisualizationWidget
@@ -176,7 +177,7 @@ class PDFExporter:
         if cat == "sorting" or tk in (
             "bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort"
         ):
-            return 480, 140
+            return 480, 205
 
         # Searching algorithms (top target HUD + scanner rail + row of tiles + indices)
         if cat == "searching" or tk in ("linear_search", "binary_search"):
@@ -230,12 +231,14 @@ class PDFExporter:
     ) -> Optional[bytes]:
         """
         Renders a single step using the offscreen VisualizationWidget at high resolution (2.5x)
-        with settled animation states and returns crisp PNG bytes.
+        with settled animation states and returns crisp PNG bytes without corner clipping.
         Returns None gracefully if rendering is unsupported.
         """
         try:
             widget = self._get_viz_widget()
+            widget._pdf_mode = True
             widget._hide_hud = True
+            widget.setStyleSheet(f"background-color: {COLORS['bg_viewport']};")
             widget.resize(width_pt, height_pt)
             widget.set_theorem(topic_key, display_name)
             widget.reset_view()
@@ -247,6 +250,7 @@ class PDFExporter:
             widget._anim_progress = 1.0
             if hasattr(widget, "_sorting_renderer"):
                 widget._sorting_renderer.progress = 1.0
+                widget._sorting_renderer.pdf_mode = True
 
             # 2.5x High-DPI resolution for crisp, publication-quality print
             scale_factor = 2.5
@@ -254,14 +258,16 @@ class PDFExporter:
             px_h = max(10, int(height_pt * scale_factor))
 
             pixmap = QPixmap(px_w, px_h)
-            pixmap.fill(Qt.white)
+            pixmap.fill(QColor(COLORS["bg_viewport"]))
 
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.Antialiasing, True)
             painter.setRenderHint(QPainter.TextAntialiasing, True)
             painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
             painter.scale(scale_factor, scale_factor)
-            widget.render(painter)
+
+            # Render widget content without painting OS dark window background
+            widget.render(painter, QPoint(), QRegion(), QWidget.RenderFlags(QWidget.DrawChildren | QWidget.IgnoreMask))
             painter.end()
 
             buffer = QBuffer()

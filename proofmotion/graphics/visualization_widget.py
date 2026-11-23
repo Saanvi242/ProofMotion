@@ -461,13 +461,19 @@ class VisualizationWidget(QWidget):
         canvas_rect = QRectF(0.5, 0.5, w - 1.0, h - 1.0)
         painter.setPen(QPen(QColor(COLORS["border_canvas"]), 1.0))
         painter.setBrush(QBrush(QColor(COLORS["bg_viewport"])))
-        painter.drawRoundedRect(canvas_rect, 10.0, 10.0)
 
-        # Clip inner drawings cleanly inside the fine border
-        painter.save()
-        clip_path = QPainterPath()
-        clip_path.addRoundedRect(canvas_rect.adjusted(0.5, 0.5, -0.5, -0.5), 9.5, 9.5)
-        painter.setClipPath(clip_path)
+        if getattr(self, "_pdf_mode", False):
+            # Clean rectangular canvas for PDF embedding (eliminates rounded corner clip artifacts)
+            painter.drawRect(canvas_rect)
+            painter.save()
+            painter.setClipRect(canvas_rect)
+        else:
+            painter.drawRoundedRect(canvas_rect, 10.0, 10.0)
+            # Clip inner drawings cleanly inside the fine border
+            painter.save()
+            clip_path = QPainterPath()
+            clip_path.addRoundedRect(canvas_rect.adjusted(0.5, 0.5, -0.5, -0.5), 9.5, 9.5)
+            painter.setClipPath(clip_path)
 
         rd = self._render_data
         mode = rd.mode if rd else "geometry"
@@ -1664,6 +1670,7 @@ class VisualizationWidget(QWidget):
     # ------------------------------------------------------------------
     def _draw_bars(self, painter: QPainter, bars: list):
         sort_event = getattr(self._render_data, "sort_event", None)
+        self._sorting_renderer.pdf_mode = bool(getattr(self, "_pdf_mode", False))
         self._sorting_renderer.render(painter, self.width(), self.height(), bars, sort_event)
 
     # ------------------------------------------------------------------

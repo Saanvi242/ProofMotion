@@ -74,7 +74,7 @@ class SortingPlaygroundRenderer:
         else:
             self._render_bouncing_balls(painter, width, height, values, bars, sort_event, t)
 
-        if sort_event and sort_event.description:
+        if sort_event and sort_event.description and not getattr(self, "pdf_mode", False):
             self._draw_event_caption(painter, width, height, sort_event)
 
     def _draw_empty_state(self, painter: QPainter, width: int, height: int):
