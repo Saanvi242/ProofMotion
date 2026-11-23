@@ -22,6 +22,7 @@ from ui.equation_panel import EquationPanel
 from ui.animation_controls import AnimationControls
 from ui.view_controls import ViewControls
 from ui.clipping_tabs import ClippingTabBar
+from ui.lesson_completion_banner import LessonCompletionBanner
 
 from graphics.visualization_widget import VisualizationWidget
 from graphics.opengl_widget import OpenGL3DWidget
@@ -338,6 +339,7 @@ class MainWindow(QMainWindow):
         # Wire separate requests from Parameter Panel and Equation Panel
         self.parameter_panel.exploreApplicationsRequested.connect(self._open_applications_dialog)
         self.parameter_panel.testUnderstandingRequested.connect(self._open_quiz_dialog)
+        self.parameter_panel.exportPdfRequested.connect(self.exportPdfRequested)
         self.equation_panel.exploreApplicationsRequested.connect(self._open_applications_dialog)
         self.equation_panel.testUnderstandingRequested.connect(self._open_quiz_dialog)
 
@@ -678,6 +680,12 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.canvas_stack, stretch=1)
 
+        self.completion_banner = LessonCompletionBanner(self)
+        self.completion_banner.hide()
+        self.completion_banner.openResourcesRequested.connect(self._on_banner_resources_requested)
+        self.completion_banner.exportPdfRequested.connect(self.exportPdfRequested)
+        layout.addWidget(self.completion_banner, stretch=0)
+
         self.animation_controls = AnimationControls()
         layout.addWidget(self.animation_controls, stretch=0)
 
@@ -715,6 +723,18 @@ class MainWindow(QMainWindow):
             self._open_quiz_dialog()
         else:
             self._open_applications_dialog()
+
+    def _on_banner_resources_requested(self):
+        if hasattr(self, "parameter_panel"):
+            self.parameter_panel.show_resources()
+
+    def show_completion_banner(self):
+        if hasattr(self, "completion_banner"):
+            self.completion_banner.show()
+
+    def hide_completion_banner(self):
+        if hasattr(self, "completion_banner"):
+            self.completion_banner.hide()
 
     def show_home(self):
         self.home_host.show_gateway()

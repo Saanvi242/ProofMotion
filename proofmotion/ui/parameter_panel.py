@@ -298,11 +298,13 @@ class ParameterPanel(QWidget):
 
     exploreApplicationsRequested = pyqtSignal(str)
     testUnderstandingRequested = pyqtSignal(str)
+    exportPdfRequested = pyqtSignal()
+    tabChanged = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ParamPanel")
-        self.setMinimumWidth(280)
+        self.setMinimumWidth(260)
         self._specs: List[ParameterSpec] = []
         self._inputs: Dict[str, Any] = {}
         self._preset_chips: List[QPushButton] = []
@@ -311,22 +313,48 @@ class ParameterPanel(QWidget):
         self._active_theorem = None
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 16, 16, 14)
-        outer.setSpacing(12)
+        outer.setContentsMargins(14, 14, 14, 12)
+        outer.setSpacing(10)
 
-        # Header Title - Clean, focused parameter view
-        title_row = QHBoxLayout()
-        title = QLabel("Explore parameters")
-        title.setObjectName("PanelTitle")
-        title_row.addWidget(title)
-        title_row.addStretch(1)
-        outer.addLayout(title_row)
+        # Header Segmented Tab Bar: [ Explore Parameters ]  [ Lesson Resources ]
+        self._tab_bar_frame = QFrame()
+        self._tab_bar_frame.setObjectName("ParamTabBar")
+        self._tab_bar_frame.setStyleSheet("""
+            QFrame#ParamTabBar {
+                background-color: #F1F5F9;
+                border: 1px solid #E2E8F0;
+                border-radius: 8px;
+                padding: 2px;
+            }
+        """)
+        tab_layout = QHBoxLayout(self._tab_bar_frame)
+        tab_layout.setContentsMargins(2, 2, 2, 2)
+        tab_layout.setSpacing(4)
+
+        self._tab_params_btn = QPushButton("Explore Parameters")
+        self._tab_params_btn.setObjectName("TabParamsBtn")
+        self._tab_params_btn.setCursor(Qt.PointingHandCursor)
+        self._tab_params_btn.setFixedHeight(30)
+        self._tab_params_btn.clicked.connect(lambda: self.set_tab(0))
+
+        self._tab_resources_btn = QPushButton("Lesson Resources")
+        self._tab_resources_btn.setObjectName("TabResourcesBtn")
+        self._tab_resources_btn.setCursor(Qt.PointingHandCursor)
+        self._tab_resources_btn.setFixedHeight(30)
+        self._tab_resources_btn.clicked.connect(lambda: self.set_tab(1))
+
+        tab_layout.addWidget(self._tab_params_btn)
+        tab_layout.addWidget(self._tab_resources_btn)
+        outer.addWidget(self._tab_bar_frame)
 
         divider = QWidget()
         divider.setObjectName("PanelDivider")
         outer.addWidget(divider)
 
-        # Scrollable container for parameters, presets, actions & supporting links
+        # Main stacked container holding Explore Parameters (0) and Lesson Resources (1)
+        self._tab_stack = QStackedWidget()
+
+        # Page 0: Explore Parameters
         self._scroll = QScrollArea()
         self._scroll.setObjectName("ParamScrollArea")
         self._scroll.setWidgetResizable(True)
@@ -383,98 +411,308 @@ class ParameterPanel(QWidget):
         action_layout.addWidget(self._reset_btn)
 
         self._fields_layout.addWidget(self._action_widget)
+        self._fields_layout.addStretch(1)
+        self._scroll.setWidget(self._fields_container)
 
-        # 3. Compact Supporting Information Entry: Real-World Applications & Quiz
-        self._apps_banner = QFrame()
-        self._apps_banner.setObjectName("ExploreAppsBanner")
-        self._apps_banner.setStyleSheet("""
+        self._params_page = QWidget()
+        params_page_layout = QVBoxLayout(self._params_page)
+        params_page_layout.setContentsMargins(0, 0, 0, 0)
+        params_page_layout.addWidget(self._scroll)
+
+        # Page 1: Lesson Resources (Real-World Applications & Test Your Understanding)
+        self._resources_page = self._build_resources_page()
+
+        self._tab_stack.addWidget(self._params_page)
+        self._tab_stack.addWidget(self._resources_page)
+        outer.addWidget(self._tab_stack, stretch=1)
+
+        self.set_tab(0)
+
+        # Retain practical_widget reference for backwards compatibility
+        self.practical_widget = PracticalLearningWidget()
+
+        self._set_empty_state()
+
+    def _build_resources_page(self) -> QWidget:
+        page = QWidget()
+        pv = QVBoxLayout(page)
+        pv.setContentsMargins(0, 0, 0, 0)
+        pv.setSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("ResourcesScrollArea")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background: transparent; border: none;")
+
+        container = QWidget()
+        cv = QVBoxLayout(container)
+        cv.setContentsMargins(2, 4, 2, 4)
+        cv.setSpacing(12)
+
+        # Card 1: Real-World Applications
+        app_card = QFrame()
+        app_card.setObjectName("ExploreAppsBanner")
+        self._apps_banner = app_card  # Backwards compatibility
+        app_card.setStyleSheet("""
             QFrame#ExploreAppsBanner {
-                background-color: #F8FAFC;
-                border: 1px solid #E2E8F0;
-                border-radius: 10px;
+                background-color: #FFFFFF;
+                border: 1.5px solid #E8ECF5;
+                border-radius: 12px;
             }
         """)
-        banner_layout = QVBoxLayout(self._apps_banner)
-        banner_layout.setContentsMargins(12, 10, 12, 12)
-        banner_layout.setSpacing(6)
+        av = QVBoxLayout(app_card)
+        av.setContentsMargins(14, 14, 14, 14)
+        av.setSpacing(8)
 
-        b_top = QHBoxLayout()
-        b_top.setSpacing(6)
-        b_badge = QLabel("REAL-WORLD APPLICATIONS")
-        b_badge.setStyleSheet("""
+        b1 = QLabel("ENGINEERING & SYSTEMS")
+        b1.setStyleSheet("""
             background-color: #EDE9FE;
             color: #6C5CE7;
-            font-family: Inter;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
             font-size: 9.5px;
             font-weight: 700;
             letter-spacing: 0.6px;
             padding: 2px 6px;
             border-radius: 4px;
         """)
-        b_top.addWidget(b_badge)
-        b_top.addStretch(1)
-        banner_layout.addLayout(b_top)
+        av.addWidget(b1, alignment=Qt.AlignLeft)
 
-        b_desc = QLabel("See how this concept is applied in production software & engineering systems.")
-        b_desc.setWordWrap(True)
-        b_desc.setStyleSheet("color: #64748B; font-family: Inter; font-size: 11.5px; line-height: 1.35;")
-        banner_layout.addWidget(b_desc)
+        t1 = QLabel("Real-World Applications")
+        t1.setStyleSheet("""
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13.5px;
+            font-weight: 600;
+        """)
+        av.addWidget(t1)
+
+        d1 = QLabel(
+            "Explore production software architectures, graphics engines, and physical engineering systems "
+            "where this algorithm or mathematical theorem is actively applied."
+        )
+        d1.setWordWrap(True)
+        d1.setStyleSheet("""
+            color: #64748B;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 11.5px;
+            line-height: 1.4;
+        """)
+        av.addWidget(d1)
 
         self._explore_apps_btn = QPushButton("Explore Applications →")
         self._explore_apps_btn.setObjectName("ExploreAppsButton")
         self._explore_apps_btn.setCursor(Qt.PointingHandCursor)
-        self._explore_apps_btn.setFixedHeight(32)
+        self._explore_apps_btn.setFixedHeight(34)
         self._explore_apps_btn.setStyleSheet("""
             QPushButton#ExploreAppsButton {
-                background-color: #FFFFFF;
-                color: #6C5CE7;
-                border: 1.5px solid #D8D1FF;
+                background-color: #6C5CE7;
+                color: #FFFFFF;
+                border: none;
                 border-radius: 6px;
-                font-family: Inter;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
                 font-size: 12px;
                 font-weight: 600;
             }
             QPushButton#ExploreAppsButton:hover {
-                background-color: #6C5CE7;
-                color: #FFFFFF;
-                border-color: #6C5CE7;
+                background-color: #5B4BD5;
             }
         """)
         self._explore_apps_btn.clicked.connect(self._on_explore_apps_clicked)
-        banner_layout.addWidget(self._explore_apps_btn)
+        av.addWidget(self._explore_apps_btn)
+        cv.addWidget(app_card)
+
+        # Card 2: Test Your Understanding
+        quiz_card = QFrame()
+        quiz_card.setObjectName("QuizResourceCard")
+        quiz_card.setStyleSheet("""
+            QFrame#QuizResourceCard {
+                background-color: #FFFFFF;
+                border: 1.5px solid #E8ECF5;
+                border-radius: 12px;
+            }
+        """)
+        qv = QVBoxLayout(quiz_card)
+        qv.setContentsMargins(14, 14, 14, 14)
+        qv.setSpacing(8)
+
+        b2 = QLabel("KNOWLEDGE CHECK")
+        b2.setStyleSheet("""
+            background-color: #DCFCE7;
+            color: #15803D;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        """)
+        qv.addWidget(b2, alignment=Qt.AlignLeft)
+
+        t2 = QLabel("Test Your Understanding")
+        t2.setStyleSheet("""
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13.5px;
+            font-weight: 600;
+        """)
+        qv.addWidget(t2)
+
+        d2 = QLabel(
+            "Challenge yourself with topic-specific multiple-choice questions, "
+            "instant answer validation, and detailed explanations."
+        )
+        d2.setWordWrap(True)
+        d2.setStyleSheet("""
+            color: #64748B;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 11.5px;
+            line-height: 1.4;
+        """)
+        qv.addWidget(d2)
 
         self._quiz_link_btn = QPushButton("Test Your Understanding →")
+        self._quiz_link_btn.setObjectName("QuizLinkButton")
         self._quiz_link_btn.setCursor(Qt.PointingHandCursor)
+        self._quiz_link_btn.setFixedHeight(34)
         self._quiz_link_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
+            QPushButton#QuizLinkButton {
+                background-color: #FFFFFF;
                 color: #059669;
-                border: none;
-                font-family: Inter;
-                font-size: 11px;
+                border: 1.5px solid #A7F3D0;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 12px;
                 font-weight: 600;
-                padding: 2px 0px;
             }
-            QPushButton:hover {
-                color: #047857;
-                text-decoration: underline;
+            QPushButton#QuizLinkButton:hover {
+                background-color: #ECFDF5;
+                border-color: #059669;
             }
         """)
         self._quiz_link_btn.clicked.connect(self._on_quiz_link_clicked)
-        banner_layout.addWidget(self._quiz_link_btn, alignment=Qt.AlignCenter)
+        qv.addWidget(self._quiz_link_btn)
+        cv.addWidget(quiz_card)
 
-        self._fields_layout.addWidget(self._apps_banner)
+        # Card 3: Study Notes & PDF Export
+        pdf_card = QFrame()
+        pdf_card.setObjectName("PdfResourceCard")
+        pdf_card.setStyleSheet("""
+            QFrame#PdfResourceCard {
+                background-color: #FFFFFF;
+                border: 1.5px solid #E8ECF5;
+                border-radius: 12px;
+            }
+        """)
+        pv_c = QVBoxLayout(pdf_card)
+        pv_c.setContentsMargins(14, 14, 14, 14)
+        pv_c.setSpacing(8)
 
-        # Stretch at bottom of scroll area so controls stay packed
-        self._fields_layout.addStretch(1)
+        b3 = QLabel("OFFLINE STUDY GUIDE")
+        b3.setStyleSheet("""
+            background-color: #FEF3C7;
+            color: #92400E;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        """)
+        pv_c.addWidget(b3, alignment=Qt.AlignLeft)
 
-        self._scroll.setWidget(self._fields_container)
-        outer.addWidget(self._scroll, stretch=1)
+        t3 = QLabel("Export Lesson as PDF")
+        t3.setStyleSheet("""
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 13.5px;
+            font-weight: 600;
+        """)
+        pv_c.addWidget(t3)
 
-        # Retain practical_widget reference for backwards compatibility
-        self.practical_widget = PracticalLearningWidget()
+        d3 = QLabel(
+            "Export this complete step-by-step lesson with mathematical formulas, "
+            "active parameters, and visual snapshots into an offline PDF document."
+        )
+        d3.setWordWrap(True)
+        d3.setStyleSheet("""
+            color: #64748B;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            font-size: 11.5px;
+            line-height: 1.4;
+        """)
+        pv_c.addWidget(d3)
 
-        self._set_empty_state()
+        self._export_pdf_btn = QPushButton("Export PDF Document")
+        self._export_pdf_btn.setObjectName("ExportPdfResourceBtn")
+        self._export_pdf_btn.setCursor(Qt.PointingHandCursor)
+        self._export_pdf_btn.setFixedHeight(34)
+        self._export_pdf_btn.setStyleSheet("""
+            QPushButton#ExportPdfResourceBtn {
+                background-color: #FFFFFF;
+                color: #6C5CE7;
+                border: 1.5px solid #D8D1FF;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton#ExportPdfResourceBtn:hover {
+                background-color: #FAF5FF;
+                border-color: #6C5CE7;
+            }
+        """)
+        self._export_pdf_btn.clicked.connect(self.exportPdfRequested.emit)
+        pv_c.addWidget(self._export_pdf_btn)
+        cv.addWidget(pdf_card)
+
+        cv.addStretch(1)
+        scroll.setWidget(container)
+        pv.addWidget(scroll)
+        return page
+
+    def set_tab(self, index: int):
+        index = max(0, min(index, 1))
+        self._tab_stack.setCurrentIndex(index)
+        self._update_tab_button_styles()
+        self.tabChanged.emit(index)
+
+    def current_tab(self) -> int:
+        return self._tab_stack.currentIndex()
+
+    def _update_tab_button_styles(self):
+        active_idx = self._tab_stack.currentIndex()
+        active_style = """
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #6C5CE7;
+                border: 1px solid #D8D1FF;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11.5px;
+                font-weight: 700;
+                padding: 4px 6px;
+            }
+        """
+        inactive_style = """
+            QPushButton {
+                background: transparent;
+                color: #64748B;
+                border: none;
+                border-radius: 6px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+                font-size: 11.5px;
+                font-weight: 500;
+                padding: 4px 6px;
+            }
+            QPushButton:hover {
+                background-color: #EDE9FE;
+                color: #5B21B6;
+            }
+        """
+        self._tab_params_btn.setStyleSheet(active_style if active_idx == 0 else inactive_style)
+        self._tab_resources_btn.setStyleSheet(active_style if active_idx == 1 else inactive_style)
 
     def _on_explore_apps_clicked(self):
         topic_key = getattr(self._active_theorem, "key", "")
@@ -497,8 +735,12 @@ class ParameterPanel(QWidget):
         self.testUnderstandingRequested.emit(topic_key)
 
     def show_parameters(self):
-        """Parameters are always visible in the focused right sidebar."""
-        pass
+        """Switch to the Explore Parameters tab."""
+        self.set_tab(0)
+
+    def show_resources(self):
+        """Switch to the Lesson Resources tab."""
+        self.set_tab(1)
 
     # ------------------------------------------------------------------
     # Public API

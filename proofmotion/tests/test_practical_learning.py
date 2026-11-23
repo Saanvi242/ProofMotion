@@ -221,6 +221,75 @@ class TestMainWindowIndependentTriggers(unittest.TestCase):
         self.assertFalse(bool(emoji_pattern.search(self.window.applications_dialog.windowTitle())))
         self.assertFalse(bool(emoji_pattern.search(self.window.quiz_dialog.windowTitle())))
 
+        # 4. Tab Buttons & Completion Banner
+        self.assertFalse(bool(emoji_pattern.search(self.window.parameter_panel._tab_params_btn.text())))
+        self.assertFalse(bool(emoji_pattern.search(self.window.parameter_panel._tab_resources_btn.text())))
+        self.assertFalse(bool(emoji_pattern.search(self.window.completion_banner._resources_btn.text())))
+        self.assertFalse(bool(emoji_pattern.search(self.window.completion_banner._pdf_btn.text())))
+
+    def test_lesson_resources_tab_navigation(self):
+        self.window.show()
+        panel = self.window.parameter_panel
+        # Default is Explore Parameters (index 0)
+        self.assertEqual(panel.current_tab(), 0)
+
+        # Switch to Lesson Resources (index 1)
+        panel._tab_resources_btn.click()
+        self.assertEqual(panel.current_tab(), 1)
+
+        # Verify buttons inside Lesson Resources
+        self.assertFalse(panel._explore_apps_btn.isHidden())
+        self.assertFalse(panel._quiz_link_btn.isHidden())
+
+        # Clicking explore apps opens applications dialog
+        panel._explore_apps_btn.click()
+        self.assertTrue(self.window.applications_dialog.isVisible())
+        self.assertFalse(self.window.quiz_dialog.isVisible())
+        self.window.applications_dialog.close()
+
+        # Clicking quiz opens quiz dialog
+        panel._quiz_link_btn.click()
+        self.assertTrue(self.window.quiz_dialog.isVisible())
+        self.assertFalse(self.window.applications_dialog.isVisible())
+        self.window.quiz_dialog.close()
+
+        # Switch back to Explore Parameters
+        panel._tab_params_btn.click()
+        self.assertEqual(panel.current_tab(), 0)
+
+    def test_lesson_completed_banner_behavior(self):
+        self.window.show()
+        self.controller.on_module_selected("sorting")
+        self.controller.on_topic_selected("bubble_sort")
+        total = len(self.controller.current_steps)
+        self.assertGreater(total, 1)
+
+        # Banner is initially hidden
+        self.assertTrue(self.window.completion_banner.isHidden())
+
+        # Go to penultimate step - banner still hidden
+        self.controller.on_step_selected(total - 2)
+        self.assertTrue(self.window.completion_banner.isHidden())
+
+        # Reach final step for first time - banner is displayed
+        self.controller.on_step_selected(total - 1)
+        self.assertFalse(self.window.completion_banner.isHidden())
+
+        # Dismiss banner with dismiss button
+        self.window.completion_banner._dismiss_btn.click()
+        self.assertTrue(self.window.completion_banner.isHidden())
+
+        # Navigate back to step 0 and forward to final step again - must NOT re-show
+        self.controller.on_step_selected(0)
+        self.assertTrue(self.window.completion_banner.isHidden())
+        self.controller.on_step_selected(total - 1)
+        self.assertTrue(self.window.completion_banner.isHidden())
+
+        # Clicking "Lesson Resources →" on banner switches tab to Lesson Resources
+        self.window.parameter_panel.set_tab(0)
+        self.window.completion_banner._resources_btn.click()
+        self.assertEqual(self.window.parameter_panel.current_tab(), 1)
+
     def test_dialog_does_not_reset_playback(self):
         self.controller.on_module_selected("sorting")
         self.controller.on_topic_selected("bubble_sort")

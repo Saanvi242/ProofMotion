@@ -54,6 +54,7 @@ class ApplicationController(QObject):
         self.current_step_index = 0
         self.is_playing = False
         self.speed_multiplier = 1.0
+        self._lesson_completed_banner_shown = False
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance_step_from_timer)
@@ -576,6 +577,9 @@ class ApplicationController(QObject):
     def on_module_selected(self, module_key: str):
         self._stop_playback()
         self.current_module = module_key
+        self._lesson_completed_banner_shown = False
+        if hasattr(self.window, "hide_completion_banner"):
+            self.window.hide_completion_banner()
 
         if module_key != "playground" and hasattr(self.window, "select_module"):
             self.window.select_module(module_key)
@@ -631,6 +635,9 @@ class ApplicationController(QObject):
     def on_topic_selected(self, topic_key: str):
         self._stop_playback()
         self.current_topic_key = topic_key
+        self._lesson_completed_banner_shown = False
+        if hasattr(self.window, "hide_completion_banner"):
+            self.window.hide_completion_banner()
         mod_info = self._catalog[self.current_module]
         item = next((it for it in mod_info["items"] if it.key == topic_key), None)
         if not item:
@@ -717,6 +724,9 @@ class ApplicationController(QObject):
     def on_parameters_applied(self, values: dict):
         self._stop_playback()
         self.current_parameters = values
+        self._lesson_completed_banner_shown = False
+        if hasattr(self.window, "hide_completion_banner"):
+            self.window.hide_completion_banner()
 
         # Synchronize parameters with OpenGL 3D renderer when active
         if self.current_module == "projections_3d" and hasattr(self.window, "opengl_widget"):
@@ -975,6 +985,13 @@ class ApplicationController(QObject):
         )
         self.stepChanged.emit(idx, total)
 
+        # Check for first-time completion of lesson in current session
+        if total > 1 and idx >= total - 1:
+            if not self._lesson_completed_banner_shown:
+                self._lesson_completed_banner_shown = True
+                if hasattr(self.window, "show_completion_banner"):
+                    self.window.show_completion_banner()
+
         # Update live lesson card for clipping and curve topics
         if self.current_topic_key in ("clip_cohen_sutherland", "clip_sutherland_hodgman"):
             tab = ""
@@ -1204,6 +1221,9 @@ class ApplicationController(QObject):
 
     def on_replay(self):
         self._stop_playback()
+        self._lesson_completed_banner_shown = False
+        if hasattr(self.window, "hide_completion_banner"):
+            self.window.hide_completion_banner()
         self.current_step_index = 0
         self._render_current_step()
         self._start_playback()
